@@ -79,6 +79,17 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         });
     }
 
+    // Cache results area (inner of the block with 1px border)
+    {
+        let r = panes[1];
+        app.layout_results_area = Some(Rect {
+            x: r.x + 1,
+            y: r.y + 1,
+            width: r.width.saturating_sub(2),
+            height: r.height.saturating_sub(2),
+        });
+    }
+
     render_editor(frame, app, panes[0], &theme);
     render_results(frame, app, panes[1], &theme);
     render_status_bar(frame, app, status_area, &theme);

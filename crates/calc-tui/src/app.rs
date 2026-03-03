@@ -127,6 +127,9 @@ pub struct App {
     pub layout_editor_area: Option<ratatui::prelude::Rect>,
     pub layout_tab_bar: Option<ratatui::prelude::Rect>,
     pub layout_gutter_width: u16,
+    pub layout_results_area: Option<ratatui::prelude::Rect>,
+    /// For double-click detection.
+    pub last_click: Option<(std::time::Instant, u16, u16)>,
 }
 
 impl App {
@@ -154,6 +157,8 @@ impl App {
             layout_editor_area: None,
             layout_tab_bar: None,
             layout_gutter_width: 0,
+            layout_results_area: None,
+            last_click: None,
         }
     }
 
@@ -530,6 +535,7 @@ impl App {
                 if let Some(tab_rect) = self.layout_tab_bar {
                     if row >= tab_rect.y && row < tab_rect.y + tab_rect.height {
                         self.handle_tab_bar_click(col);
+                        self.last_click = None;
                         return;
                     }
                 }
@@ -546,21 +552,83 @@ impl App {
                             self.buffers[i].scroll_offset + (row - editor_rect.y) as usize;
                         let char_col = (col - editor_rect.x) as usize;
 
+                        // Detect double-click (same position within 400ms)
+                        let is_double = self.last_click.map_or(false, |(t, lc, lr)| {
+                            lc == col && lr == row && t.elapsed().as_millis() < 400
+                        });
+
                         if line_idx < self.buffers[i].lines.len() {
-                            self.buffers[i].cursor_y = line_idx;
-                            let line_len = self.buffers[i].lines[line_idx].chars().count();
-                            if self.mode == Mode::Normal || self.mode == Mode::Visual {
-                                self.buffers[i].cursor_x =
-                                    if line_len == 0 { 0 } else { char_col.min(line_len - 1) };
+                            if is_double {
+                                // Double-click: select word under cursor
+                                self.last_click = None;
+                                let chars: Vec<char> =
+                                    self.buffers[i].lines[line_idx].chars().collect();
+                                if !chars.is_empty() {
+                                    let cx = char_col.min(chars.len() - 1);
+                                    let (start, end) = input::find_inner_word_pub(&chars, cx);
+                                    self.buffers[i].cursor_y = line_idx;
+                                    self.buffers[i].selection = Some(Selection {
+                                        anchor_y: line_idx,
+                                        anchor_x: start,
+                                        kind: SelectionKind::Char,
+                                    });
+                                    self.buffers[i].cursor_x =
+                                        if end > 0 { end - 1 } else { 0 };
+                                    if self.config.edit_style == EditStyle::Vim {
+                                        self.mode = Mode::Visual;
+                                    }
+                                }
                             } else {
-                                self.buffers[i].cursor_x = char_col.min(line_len);
+                                // Single click: move cursor
+                                self.last_click =
+                                    Some((std::time::Instant::now(), col, row));
+                                self.buffers[i].cursor_y = line_idx;
+                                let line_len =
+                                    self.buffers[i].lines[line_idx].chars().count();
+                                if self.mode == Mode::Normal || self.mode == Mode::Visual {
+                                    self.buffers[i].cursor_x = if line_len == 0 {
+                                        0
+                                    } else {
+                                        char_col.min(line_len - 1)
+                                    };
+                                } else {
+                                    self.buffers[i].cursor_x = char_col.min(line_len);
+                                }
+                                // Clear selection/pending state
+                                self.buffers[i].selection = None;
+                                if self.mode == Mode::Visual {
+                                    self.mode = Mode::Normal;
+                                }
                             }
                             self.clear_desired_x();
-                            // Clear any pending key / easy motion
                             self.pending_key = None;
                             self.easy_motion = None;
-                            // Start selection on drag
-                            self.buffers[i].selection = None;
+                        }
+                    }
+                }
+
+                // Check results area click — copy result to clipboard
+                if let Some(results_rect) = self.layout_results_area {
+                    if col >= results_rect.x
+                        && col < results_rect.x + results_rect.width
+                        && row >= results_rect.y
+                        && row < results_rect.y + results_rect.height
+                    {
+                        let i = self.active_tab;
+                        let line_idx =
+                            self.buffers[i].scroll_offset + (row - results_rect.y) as usize;
+                        if let Some(result) = self.buffers[i].results.get(line_idx) {
+                            let text = if let Some(ref err) = result.error {
+                                err.clone()
+                            } else if !result.display.is_empty() {
+                                result.display.clone()
+                            } else {
+                                String::new()
+                            };
+                            if !text.is_empty() {
+                                clipboard::copy(&text);
+                                self.message = Some(format!("Copied: {}", text));
+                            }
                         }
                     }
                 }

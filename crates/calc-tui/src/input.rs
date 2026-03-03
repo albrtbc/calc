@@ -796,6 +796,10 @@ pub fn move_word_backward_pub(app: &mut App) {
     move_word_backward(app);
 }
 
+pub fn find_inner_word_pub(chars: &[char], cx: usize) -> (usize, usize) {
+    find_inner_word(chars, cx)
+}
+
 // ---------------------------------------------------------------------------
 // Word motion helpers
 // ---------------------------------------------------------------------------
