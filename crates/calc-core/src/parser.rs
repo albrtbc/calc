@@ -40,7 +40,10 @@ impl Parser {
 
         let mut result = Vec::new();
         for line_tokens in all_lines {
-            result.push(parse_line(line_tokens)?);
+            match parse_line(line_tokens) {
+                Ok(line) => result.push(line),
+                Err(e) => result.push(Line::Error(e.to_string())),
+            }
         }
         Ok(result)
     }

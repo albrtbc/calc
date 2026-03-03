@@ -115,7 +115,7 @@ pub struct App {
     pub config: Config,
     pub mode: Mode,
     pub command_buffer: String,
-    pub pending_key: Option<char>,
+    pub pending_key: Option<String>,
     pub prompt: Option<Prompt>,
     pub easy_motion: Option<EasyMotionState>,
     pub last_visible_height: usize,
@@ -1133,6 +1133,12 @@ impl App {
             if self.buffers[self.active_tab].file_path.is_some() {
                 self.close_tab_force();
             }
+        } else if cmd == "tabnew" {
+            self.new_buffer();
+        } else if cmd == "tabn" {
+            self.next_tab();
+        } else if cmd == "tabp" {
+            self.prev_tab();
         } else {
             self.message = Some(format!("Unknown command: :{}", cmd));
         }

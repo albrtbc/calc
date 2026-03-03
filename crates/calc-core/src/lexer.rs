@@ -139,6 +139,10 @@ impl Lexer {
             if ch.is_ascii_digit() || ch == '.' {
                 s.push(ch);
                 self.advance();
+            } else if ch == ',' && self.peek_at(1).is_some_and(|c| c.is_ascii_digit()) {
+                // Treat comma as decimal separator when followed by a digit (e.g. 3,5 → 3.5)
+                s.push('.');
+                self.advance();
             } else if ch == '_' {
                 // Allow underscores as separators (ignored)
                 self.advance();

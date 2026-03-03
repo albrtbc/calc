@@ -191,9 +191,9 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) -> bool {
 
     let i = app.active_tab;
 
-    // If there's a pending key, handle the two-key combo
+    // If there's a pending key sequence, handle the combo
     if let Some(pending) = app.pending_key.take() {
-        return handle_pending_key(app, pending, key);
+        return handle_pending_key(app, &pending, key);
     }
 
     match key.code {
@@ -364,10 +364,46 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) -> bool {
             true
         }
 
+        // -- Change (C = change to end of line) --
+        KeyCode::Char('C') => {
+            let cy = app.buffers[i].cursor_y;
+            let cx = app.buffers[i].cursor_x;
+            let line = &mut app.buffers[i].lines[cy];
+            let byte_pos = char_to_byte_pos(line, cx);
+            line.truncate(byte_pos);
+            app.mode = Mode::Insert;
+            app.message = None;
+            true
+        }
+        KeyCode::Char('s') => {
+            // s: delete char under cursor, enter insert mode
+            let cy = app.buffers[i].cursor_y;
+            let line_len = app.buffers[i].lines[cy].chars().count();
+            let cx = app.buffers[i].cursor_x;
+            if line_len > 0 && cx < line_len {
+                let line = &mut app.buffers[i].lines[cy];
+                let byte_start = char_to_byte_pos(line, cx);
+                let byte_end = char_to_byte_pos(line, cx + 1);
+                line.drain(byte_start..byte_end);
+            }
+            app.mode = Mode::Insert;
+            app.message = None;
+            true
+        }
+        KeyCode::Char('S') => {
+            // S: clear entire line, enter insert mode (same as cc)
+            let cy = app.buffers[i].cursor_y;
+            app.buffers[i].lines[cy] = String::new();
+            app.buffers[i].cursor_x = 0;
+            app.mode = Mode::Insert;
+            app.message = None;
+            true
+        }
+
         // -- Multi-key sequences --
-        KeyCode::Char('d') | KeyCode::Char('y') | KeyCode::Char('g') => {
+        KeyCode::Char('d') | KeyCode::Char('y') | KeyCode::Char('g') | KeyCode::Char('c') => {
             if let KeyCode::Char(c) = key.code {
-                app.pending_key = Some(c);
+                app.pending_key = Some(c.to_string());
             }
             false
         }
@@ -376,25 +412,195 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) -> bool {
     }
 }
 
-fn handle_pending_key(app: &mut App, pending: char, key: KeyEvent) -> bool {
-    match (pending, key.code) {
-        ('d', KeyCode::Char('d')) => {
+fn handle_pending_key(app: &mut App, pending: &str, key: KeyEvent) -> bool {
+    let ch = match key.code {
+        KeyCode::Char(c) => c,
+        _ => return false,
+    };
+
+    match (pending, ch) {
+        ("d", 'd') => {
             let removed = app.delete_line();
             app.buffers[app.active_tab].yank_buffer = vec![removed];
             true
         }
-        ('y', KeyCode::Char('y')) => {
+        ("d", 'i') => {
+            // di_ — wait for text object
+            app.pending_key = Some("di".to_string());
+            false
+        }
+        ("di", 'w') => {
+            // diw: delete inner word
+            delete_inner_word(app);
+            true
+        }
+        ("y", 'y') => {
             app.yank_line();
             app.message = Some("1 line yanked".to_string());
             false
         }
-        ('g', KeyCode::Char('g')) => {
+        ("g", 'g') => {
             app.buffers[app.active_tab].cursor_y = 0;
             app.clamp_cursor();
             false
         }
+        ("g", 't') => {
+            app.next_tab();
+            false
+        }
+        ("g", 'T') => {
+            app.prev_tab();
+            false
+        }
+        // -- c (change) combos --
+        ("c", 'c') => {
+            let i = app.active_tab;
+            let cy = app.buffers[i].cursor_y;
+            app.buffers[i].lines[cy] = String::new();
+            app.buffers[i].cursor_x = 0;
+            app.mode = Mode::Insert;
+            app.message = None;
+            true
+        }
+        ("c", 'i') => {
+            // ci_ — wait for text object
+            app.pending_key = Some("ci".to_string());
+            false
+        }
+        ("ci", 'w') => {
+            // ciw: delete inner word, enter insert mode
+            delete_inner_word(app);
+            app.mode = Mode::Insert;
+            app.message = None;
+            true
+        }
+        ("c", 'w') | ("c", 'e') => {
+            let i = app.active_tab;
+            let cy = app.buffers[i].cursor_y;
+            let chars: Vec<char> = app.buffers[i].lines[cy].chars().collect();
+            let len = chars.len();
+            let cx = app.buffers[i].cursor_x;
+
+            if cx < len {
+                let mut end = cx;
+                if is_word_char(chars[end]) {
+                    while end < len && is_word_char(chars[end]) {
+                        end += 1;
+                    }
+                } else if !chars[end].is_whitespace() {
+                    while end < len && !chars[end].is_whitespace() && !is_word_char(chars[end]) {
+                        end += 1;
+                    }
+                } else {
+                    while end < len && chars[end].is_whitespace() {
+                        end += 1;
+                    }
+                    if end < len && is_word_char(chars[end]) {
+                        while end < len && is_word_char(chars[end]) {
+                            end += 1;
+                        }
+                    } else {
+                        while end < len && !chars[end].is_whitespace() && !is_word_char(chars[end]) {
+                            end += 1;
+                        }
+                    }
+                }
+
+                let line = &mut app.buffers[i].lines[cy];
+                let bs = char_to_byte_pos(line, cx);
+                let be = char_to_byte_pos(line, end);
+                line.drain(bs..be);
+            }
+
+            app.mode = Mode::Insert;
+            app.message = None;
+            true
+        }
+        ("c", 'b') => {
+            app.delete_word_backward();
+            app.mode = Mode::Insert;
+            app.message = None;
+            true
+        }
+        ("c", '$') => {
+            let i = app.active_tab;
+            let cy = app.buffers[i].cursor_y;
+            let cx = app.buffers[i].cursor_x;
+            let line = &mut app.buffers[i].lines[cy];
+            let byte_pos = char_to_byte_pos(line, cx);
+            line.truncate(byte_pos);
+            app.mode = Mode::Insert;
+            app.message = None;
+            true
+        }
+        ("c", '0') => {
+            let i = app.active_tab;
+            let cy = app.buffers[i].cursor_y;
+            let cx = app.buffers[i].cursor_x;
+            let line = &mut app.buffers[i].lines[cy];
+            let byte_pos = char_to_byte_pos(line, cx);
+            line.drain(..byte_pos);
+            app.buffers[i].cursor_x = 0;
+            app.mode = Mode::Insert;
+            app.message = None;
+            true
+        }
         _ => false,
     }
+}
+
+/// Find the start and end (char indices) of the word under the cursor.
+fn find_inner_word(chars: &[char], cx: usize) -> (usize, usize) {
+    let len = chars.len();
+    if len == 0 {
+        return (0, 0);
+    }
+    let pos = cx.min(len - 1);
+
+    let (mut start, mut end) = (pos, pos);
+
+    if is_word_char(chars[pos]) {
+        while start > 0 && is_word_char(chars[start - 1]) {
+            start -= 1;
+        }
+        while end + 1 < len && is_word_char(chars[end + 1]) {
+            end += 1;
+        }
+    } else if !chars[pos].is_whitespace() {
+        while start > 0 && !chars[start - 1].is_whitespace() && !is_word_char(chars[start - 1]) {
+            start -= 1;
+        }
+        while end + 1 < len && !chars[end + 1].is_whitespace() && !is_word_char(chars[end + 1]) {
+            end += 1;
+        }
+    } else {
+        while start > 0 && chars[start - 1].is_whitespace() {
+            start -= 1;
+        }
+        while end + 1 < len && chars[end + 1].is_whitespace() {
+            end += 1;
+        }
+    }
+
+    (start, end + 1)
+}
+
+/// Delete the word under the cursor (inner word, like vim `diw`).
+fn delete_inner_word(app: &mut App) {
+    let i = app.active_tab;
+    let cy = app.buffers[i].cursor_y;
+    let chars: Vec<char> = app.buffers[i].lines[cy].chars().collect();
+    if chars.is_empty() {
+        return;
+    }
+    let cx = app.buffers[i].cursor_x;
+    let (start, end) = find_inner_word(&chars, cx);
+
+    let line = &mut app.buffers[i].lines[cy];
+    let bs = char_to_byte_pos(line, start);
+    let be = char_to_byte_pos(line, end);
+    line.drain(bs..be);
+    app.buffers[i].cursor_x = start;
 }
 
 // ---------------------------------------------------------------------------

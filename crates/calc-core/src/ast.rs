@@ -36,4 +36,5 @@ pub enum Line {
     Comment(String),
     Label(String),
     Expr(Expr),
+    Error(String),
 }

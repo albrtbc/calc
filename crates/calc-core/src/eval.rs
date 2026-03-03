@@ -140,6 +140,7 @@ fn evaluate_line(line: &Line, env: &mut Environment, _line_index: usize) -> Line
     match line {
         Line::Empty | Line::Label(_) => LineResult::empty(),
         Line::Comment(_) => LineResult::empty(),
+        Line::Error(msg) => LineResult::err(msg.clone()),
         Line::Expr(expr) => {
             let is_assignment = matches!(expr, Expr::Assign { .. });
             match eval_expr(expr, env) {

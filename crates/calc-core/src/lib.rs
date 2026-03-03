@@ -14,36 +14,29 @@ pub use error::CalcError;
 /// Convenience: evaluate a multi-line string and return one `LineResult` per line.
 ///
 /// Errors in individual lines are reported per-line (the `error` field) rather
-/// than aborting the whole evaluation. Lexer/parser errors that prevent parsing
-/// the entire document are returned as a single-element vec with an error.
+/// than aborting the whole evaluation. Both lexer and parser errors are isolated
+/// to the line that caused them.
 pub fn evaluate(input: &str) -> Vec<LineResult> {
-    let mut lex = lexer::Lexer::new(input);
-    let tokens = match lex.tokenize() {
-        Ok(t) => t,
-        Err(e) => {
-            return vec![LineResult {
-                value: None,
-                display: String::new(),
-                error: Some(e.to_string()),
-                is_assignment: false,
-            }];
-        }
-    };
+    let mut all_lines: Vec<ast::Line> = Vec::new();
 
-    let mut parser = parser::Parser::new(tokens);
-    let lines = match parser.parse_document() {
-        Ok(l) => l,
-        Err(e) => {
-            return vec![LineResult {
-                value: None,
-                display: String::new(),
-                error: Some(e.to_string()),
-                is_assignment: false,
-            }];
-        }
-    };
+    for line_str in input.split('\n') {
+        let mut lex = lexer::Lexer::new(line_str);
+        let tokens = match lex.tokenize() {
+            Ok(t) => t,
+            Err(e) => {
+                all_lines.push(ast::Line::Error(e.to_string()));
+                continue;
+            }
+        };
 
-    evaluate_document(&lines)
+        let mut p = parser::Parser::new(tokens);
+        match p.parse_document() {
+            Ok(lines) => all_lines.extend(lines),
+            Err(e) => all_lines.push(ast::Line::Error(e.to_string())),
+        }
+    }
+
+    evaluate_document(&all_lines)
 }
 
 #[cfg(test)]
@@ -193,5 +186,37 @@ mod integration_tests {
         let r = evaluate("Budget:\n100 + 50");
         assert!(r[0].value.is_none());
         assert_eq!(r[1].display, "150");
+    }
+
+    #[test]
+    fn test_parse_error_isolation() {
+        let r = evaluate("1 + 1\n3 +\n5 + 5");
+        assert_eq!(r.len(), 3);
+        assert!(r[0].error.is_none());
+        assert!(r[1].error.is_some());
+        assert!(r[2].error.is_none());
+        assert_eq!(r[2].display, "10");
+    }
+
+    #[test]
+    fn test_decimal_comma() {
+        let r = evaluate("3,5 + 1,5");
+        assert!(r[0].error.is_none());
+        assert_eq!(r[0].display, "5");
+
+        let r = evaluate("0,1 + 0,2");
+        assert!(r[0].error.is_none());
+        let v = r[0].value.as_ref().unwrap().number;
+        assert!((v - 0.3).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_lexer_error_isolation() {
+        let r = evaluate("1 + 1\n3 `\n5 + 5");
+        assert_eq!(r.len(), 3);
+        assert!(r[0].error.is_none());
+        assert!(r[1].error.is_some());
+        assert!(r[2].error.is_none());
+        assert_eq!(r[2].display, "10");
     }
 }
