@@ -180,7 +180,12 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) -> bool {
         return handle_easy_motion_key(app, key);
     }
 
+    // Ctrl+R for redo must be handled before the Ctrl filter
     if key.modifiers.contains(KeyModifiers::CONTROL) {
+        if key.code == KeyCode::Char('r') {
+            app.redo();
+            return false;
+        }
         return false;
     }
 
@@ -325,6 +330,12 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) -> bool {
                 labels: Vec::new(),
             });
             app.message = Some("EasyMotion: type to search".to_string());
+            false
+        }
+
+        // -- Undo / Redo --
+        KeyCode::Char('u') => {
+            app.undo();
             false
         }
 

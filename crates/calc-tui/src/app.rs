@@ -34,6 +34,15 @@ pub struct Selection {
     pub kind: SelectionKind,
 }
 
+// ── Undo / Redo ─────────────────────────────────────────────────────────────
+
+#[derive(Clone)]
+pub struct UndoSnapshot {
+    pub lines: Vec<String>,
+    pub cursor_x: usize,
+    pub cursor_y: usize,
+}
+
 // ── Per-buffer state ─────────────────────────────────────────────────────────
 
 pub struct Buffer {
@@ -46,6 +55,8 @@ pub struct Buffer {
     pub dirty: bool,
     pub selection: Option<Selection>,
     pub yank_buffer: Vec<String>,
+    pub undo_stack: Vec<UndoSnapshot>,
+    pub redo_stack: Vec<UndoSnapshot>,
 }
 
 impl Buffer {
@@ -60,6 +71,8 @@ impl Buffer {
             dirty: false,
             selection: None,
             yank_buffer: Vec::new(),
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
         };
         buf.evaluate();
         buf
@@ -263,23 +276,34 @@ impl App {
                     self.close_tab();
                     return;
                 }
+                KeyCode::Char('z') => {
+                    self.undo();
+                    return;
+                }
+                KeyCode::Char('Z') => {
+                    self.redo();
+                    return;
+                }
                 KeyCode::Char('c') | KeyCode::Char('C') => {
                     self.copy_selection_or_line();
                     return;
                 }
                 KeyCode::Char('x') | KeyCode::Char('X') => {
+                    self.save_undo_snapshot();
                     self.cut_selection_or_line();
                     self.buffers[i].dirty = true;
                     self.evaluate();
                     return;
                 }
                 KeyCode::Char('v') | KeyCode::Char('V') => {
+                    self.save_undo_snapshot();
                     self.paste_from_clipboard();
                     self.buffers[i].dirty = true;
                     self.evaluate();
                     return;
                 }
                 KeyCode::Char('d') | KeyCode::Char('D') => {
+                    self.save_undo_snapshot();
                     if self.buffers[i].selection.is_some() {
                         self.cut_selection_or_line();
                     } else {
@@ -292,12 +316,14 @@ impl App {
                     return;
                 }
                 KeyCode::Delete => {
+                    self.save_undo_snapshot();
                     self.delete_word_forward();
                     self.buffers[i].dirty = true;
                     self.evaluate();
                     return;
                 }
                 KeyCode::Backspace => {
+                    self.save_undo_snapshot();
                     self.delete_word_backward();
                     self.buffers[i].dirty = true;
                     self.evaluate();
@@ -318,12 +344,14 @@ impl App {
         if key.modifiers.contains(KeyModifiers::ALT) {
             match key.code {
                 KeyCode::Delete => {
+                    self.save_undo_snapshot();
                     self.delete_word_forward();
                     self.buffers[i].dirty = true;
                     self.evaluate();
                     return;
                 }
                 KeyCode::Backspace => {
+                    self.save_undo_snapshot();
                     self.delete_word_backward();
                     self.buffers[i].dirty = true;
                     self.evaluate();
@@ -425,8 +453,10 @@ impl App {
             self.buffers[i].selection = None;
         }
 
+        let snap = self.take_snapshot();
         let changed = input::handle_insert_key(self, key);
         if changed {
+            self.push_snapshot(snap);
             self.buffers[self.active_tab].dirty = true;
             self.evaluate();
         }
@@ -436,8 +466,10 @@ impl App {
         let i = self.active_tab;
         match self.mode {
             Mode::Normal => {
+                let snap = self.take_snapshot();
                 let changed = input::handle_normal_key(self, key);
                 if changed {
+                    self.push_snapshot(snap);
                     self.buffers[i].dirty = true;
                     self.evaluate();
                 }
@@ -445,8 +477,10 @@ impl App {
             Mode::Insert => {
                 // Safety: clear EasyMotion if mode changed away from Normal
                 self.easy_motion = None;
+                let snap = self.take_snapshot();
                 let changed = input::handle_insert_mode_key(self, key);
                 if changed {
+                    self.push_snapshot(snap);
                     self.buffers[i].dirty = true;
                     self.evaluate();
                 }
@@ -454,8 +488,10 @@ impl App {
             Mode::Visual => {
                 // Safety: clear EasyMotion if mode changed away from Normal
                 self.easy_motion = None;
+                let snap = self.take_snapshot();
                 let changed = input::handle_visual_key(self, key);
                 if changed {
+                    self.push_snapshot(snap);
                     self.buffers[i].dirty = true;
                     self.evaluate();
                 }
@@ -520,6 +556,69 @@ impl App {
 
     pub fn evaluate(&mut self) {
         self.buffers[self.active_tab].evaluate();
+    }
+
+    // ── Undo / Redo ──────────────────────────────────────────────────────
+
+    pub fn save_undo_snapshot(&mut self) {
+        let b = &mut self.buffers[self.active_tab];
+        b.undo_stack.push(UndoSnapshot {
+            lines: b.lines.clone(),
+            cursor_x: b.cursor_x,
+            cursor_y: b.cursor_y,
+        });
+        b.redo_stack.clear();
+    }
+
+    pub fn undo(&mut self) {
+        let b = &mut self.buffers[self.active_tab];
+        if let Some(snap) = b.undo_stack.pop() {
+            b.redo_stack.push(UndoSnapshot {
+                lines: b.lines.clone(),
+                cursor_x: b.cursor_x,
+                cursor_y: b.cursor_y,
+            });
+            b.lines = snap.lines;
+            b.cursor_x = snap.cursor_x;
+            b.cursor_y = snap.cursor_y;
+            b.evaluate();
+            self.message = Some("Undo".to_string());
+        } else {
+            self.message = Some("Already at oldest change".to_string());
+        }
+    }
+
+    pub fn redo(&mut self) {
+        let b = &mut self.buffers[self.active_tab];
+        if let Some(snap) = b.redo_stack.pop() {
+            b.undo_stack.push(UndoSnapshot {
+                lines: b.lines.clone(),
+                cursor_x: b.cursor_x,
+                cursor_y: b.cursor_y,
+            });
+            b.lines = snap.lines;
+            b.cursor_x = snap.cursor_x;
+            b.cursor_y = snap.cursor_y;
+            b.evaluate();
+            self.message = Some("Redo".to_string());
+        } else {
+            self.message = Some("Already at newest change".to_string());
+        }
+    }
+
+    fn take_snapshot(&self) -> UndoSnapshot {
+        let b = &self.buffers[self.active_tab];
+        UndoSnapshot {
+            lines: b.lines.clone(),
+            cursor_x: b.cursor_x,
+            cursor_y: b.cursor_y,
+        }
+    }
+
+    fn push_snapshot(&mut self, snap: UndoSnapshot) {
+        let b = &mut self.buffers[self.active_tab];
+        b.undo_stack.push(snap);
+        b.redo_stack.clear();
     }
 
     // ── File I/O ─────────────────────────────────────────────────────────

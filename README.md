@@ -78,6 +78,13 @@ calc --vim notes.calc
 
 All Shift combinations extend the same selection. Any non-Shift key clears it.
 
+**Undo / Redo:**
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+Z` | Undo |
+| `Ctrl+Shift+Z` | Redo |
+
 **Editing:**
 
 | Key | Action |
@@ -133,6 +140,13 @@ Launch with `calc --vim` to enable modal editing.
 | `b` | Move to previous word start |
 | `gg` | Go to first line |
 | `G` | Go to last line |
+
+**Normal mode — undo / redo:**
+
+| Key | Action |
+|-----|--------|
+| `u` | Undo |
+| `Ctrl+R` | Redo |
 
 **Normal mode — editing:**
 
