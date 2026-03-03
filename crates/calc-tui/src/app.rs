@@ -1,6 +1,6 @@
 use std::io;
 use crossterm::cursor::SetCursorStyle;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind, MouseButton};
 use ratatui::prelude::*;
 use ratatui::backend::CrosstermBackend;
 
@@ -123,6 +123,10 @@ pub struct App {
     pub prompt: Option<Prompt>,
     pub easy_motion: Option<EasyMotionState>,
     pub last_visible_height: usize,
+    /// Cached layout rects for mouse hit-testing (set during render).
+    pub layout_editor_area: Option<ratatui::prelude::Rect>,
+    pub layout_tab_bar: Option<ratatui::prelude::Rect>,
+    pub layout_gutter_width: u16,
 }
 
 impl App {
@@ -147,6 +151,9 @@ impl App {
             prompt: None,
             easy_motion: None,
             last_visible_height: 20,
+            layout_editor_area: None,
+            layout_tab_bar: None,
+            layout_gutter_width: 0,
         }
     }
 
@@ -172,8 +179,10 @@ impl App {
             }
 
             if event::poll(std::time::Duration::from_millis(50))? {
-                if let Event::Key(key) = event::read()? {
-                    self.handle_key(key);
+                match event::read()? {
+                    Event::Key(key) => self.handle_key(key),
+                    Event::Mouse(mouse) => self.handle_mouse(mouse),
+                    _ => {}
                 }
             }
         }
@@ -506,6 +515,128 @@ impl App {
                 self.easy_motion = None;
                 input::handle_command_key(self, key);
             }
+        }
+    }
+
+    // ── Mouse handling ────────────────────────────────────────────────────
+
+    fn handle_mouse(&mut self, mouse: MouseEvent) {
+        let col = mouse.column;
+        let row = mouse.row;
+
+        match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                // Check tab bar click
+                if let Some(tab_rect) = self.layout_tab_bar {
+                    if row >= tab_rect.y && row < tab_rect.y + tab_rect.height {
+                        self.handle_tab_bar_click(col);
+                        return;
+                    }
+                }
+
+                // Check editor area click
+                if let Some(editor_rect) = self.layout_editor_area {
+                    if col >= editor_rect.x
+                        && col < editor_rect.x + editor_rect.width
+                        && row >= editor_rect.y
+                        && row < editor_rect.y + editor_rect.height
+                    {
+                        let i = self.active_tab;
+                        let line_idx =
+                            self.buffers[i].scroll_offset + (row - editor_rect.y) as usize;
+                        let char_col = (col - editor_rect.x) as usize;
+
+                        if line_idx < self.buffers[i].lines.len() {
+                            self.buffers[i].cursor_y = line_idx;
+                            let line_len = self.buffers[i].lines[line_idx].chars().count();
+                            if self.mode == Mode::Normal || self.mode == Mode::Visual {
+                                self.buffers[i].cursor_x =
+                                    if line_len == 0 { 0 } else { char_col.min(line_len - 1) };
+                            } else {
+                                self.buffers[i].cursor_x = char_col.min(line_len);
+                            }
+                            self.clear_desired_x();
+                            // Clear any pending key / easy motion
+                            self.pending_key = None;
+                            self.easy_motion = None;
+                            // Start selection on drag
+                            self.buffers[i].selection = None;
+                        }
+                    }
+                }
+            }
+            MouseEventKind::Drag(MouseButton::Left) => {
+                if let Some(editor_rect) = self.layout_editor_area {
+                    if col >= editor_rect.x && row >= editor_rect.y {
+                        let i = self.active_tab;
+
+                        // Start selection if not already active
+                        if self.buffers[i].selection.is_none() {
+                            let cy = self.buffers[i].cursor_y;
+                            let cx = self.buffers[i].cursor_x;
+                            self.buffers[i].selection = Some(Selection {
+                                anchor_y: cy,
+                                anchor_x: cx,
+                                kind: SelectionKind::Char,
+                            });
+                            // Enter visual mode in vim
+                            if self.config.edit_style == EditStyle::Vim {
+                                self.mode = Mode::Visual;
+                            }
+                        }
+
+                        let line_idx =
+                            self.buffers[i].scroll_offset + (row - editor_rect.y) as usize;
+                        let char_col = (col - editor_rect.x) as usize;
+
+                        if line_idx < self.buffers[i].lines.len() {
+                            self.buffers[i].cursor_y = line_idx;
+                            let line_len = self.buffers[i].lines[line_idx].chars().count();
+                            self.buffers[i].cursor_x = char_col.min(line_len);
+                            self.clear_desired_x();
+                        }
+                    }
+                }
+            }
+            MouseEventKind::ScrollUp => {
+                let i = self.active_tab;
+                let scroll_amount = 3usize;
+                self.buffers[i].scroll_offset =
+                    self.buffers[i].scroll_offset.saturating_sub(scroll_amount);
+                if self.buffers[i].cursor_y
+                    >= self.buffers[i].scroll_offset + self.last_visible_height
+                {
+                    self.buffers[i].cursor_y =
+                        self.buffers[i].scroll_offset + self.last_visible_height - 1;
+                    self.clamp_cursor();
+                }
+            }
+            MouseEventKind::ScrollDown => {
+                let i = self.active_tab;
+                let scroll_amount = 3usize;
+                let max_scroll = self.buffers[i].lines.len().saturating_sub(1);
+                self.buffers[i].scroll_offset =
+                    (self.buffers[i].scroll_offset + scroll_amount).min(max_scroll);
+                if self.buffers[i].cursor_y < self.buffers[i].scroll_offset {
+                    self.buffers[i].cursor_y = self.buffers[i].scroll_offset;
+                    self.clamp_cursor();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_tab_bar_click(&mut self, col: u16) {
+        // Tab labels are rendered as " name " with a space separator.
+        // Walk through tabs to find which one was clicked.
+        let mut x: u16 = 0;
+        for (idx, buf) in self.buffers.iter().enumerate() {
+            let label_len = buf.tab_name().len() as u16 + 2; // " name "
+            if col >= x && col < x + label_len {
+                self.active_tab = idx;
+                return;
+            }
+            x += label_len + 1; // +1 for separator space
         }
     }
 

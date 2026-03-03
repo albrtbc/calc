@@ -35,8 +35,11 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     let mut idx = 0;
     if has_tab_bar {
+        app.layout_tab_bar = Some(main_layout[idx]);
         render_tab_bar(frame, app, main_layout[idx], &theme);
         idx += 1;
+    } else {
+        app.layout_tab_bar = None;
     }
 
     let content_area = main_layout[idx];
@@ -49,6 +52,32 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
         .split(content_area);
+
+    // Cache editor layout for mouse hit-testing
+    {
+        let editor_outer = panes[0];
+        // Replicate the Block::inner calculation (1px border on each side)
+        let inner = Rect {
+            x: editor_outer.x + 1,
+            y: editor_outer.y + 1,
+            width: editor_outer.width.saturating_sub(2),
+            height: editor_outer.height.saturating_sub(2),
+        };
+        let total_lines = app.buffers[app.active_tab].lines.len();
+        let digit_count = if total_lines == 0 {
+            1
+        } else {
+            (total_lines as f64).log10().floor() as usize + 1
+        };
+        let gutter_width = (digit_count.max(2) + 1) as u16;
+        app.layout_gutter_width = gutter_width.min(inner.width);
+        app.layout_editor_area = Some(Rect {
+            x: inner.x + app.layout_gutter_width,
+            y: inner.y,
+            width: inner.width.saturating_sub(app.layout_gutter_width),
+            height: inner.height,
+        });
+    }
 
     render_editor(frame, app, panes[0], &theme);
     render_results(frame, app, panes[1], &theme);
