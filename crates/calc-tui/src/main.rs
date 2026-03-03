@@ -89,7 +89,8 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
-        DisableMouseCapture
+        DisableMouseCapture,
+        crossterm::cursor::SetCursorStyle::DefaultUserShape
     )?;
     terminal.show_cursor()?;
     Ok(())

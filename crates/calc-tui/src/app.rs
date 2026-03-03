@@ -1,4 +1,5 @@
 use std::io;
+use crossterm::cursor::SetCursorStyle;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
 use ratatui::backend::CrosstermBackend;
@@ -151,6 +152,16 @@ impl App {
     ) -> io::Result<()> {
         loop {
             terminal.draw(|f| ui::render(f, self))?;
+
+            // Set cursor shape: bar in Insert/Simple, block otherwise
+            let cursor_style = match self.config.edit_style {
+                EditStyle::Simple => SetCursorStyle::SteadyBar,
+                EditStyle::Vim => match self.mode {
+                    Mode::Insert => SetCursorStyle::SteadyBar,
+                    _ => SetCursorStyle::SteadyBlock,
+                },
+            };
+            crossterm::execute!(io::stdout(), cursor_style)?;
 
             if self.should_quit {
                 break;
