@@ -8,6 +8,10 @@ use crate::mode::Mode;
 
 pub fn handle_insert_key(app: &mut App, key: KeyEvent) -> bool {
     let i = app.active_tab;
+    // Clear desired column on any non-vertical action
+    if !matches!(key.code, KeyCode::Up | KeyCode::Down) {
+        app.clear_desired_x();
+    }
     match key.code {
         KeyCode::Char(c) => {
             if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -81,6 +85,7 @@ pub fn handle_insert_key(app: &mut App, key: KeyEvent) -> bool {
                 let cy = app.buffers[i].cursor_y;
                 app.buffers[i].cursor_x = app.buffers[i].lines[cy].chars().count();
             }
+            app.clear_desired_x();
             false
         }
         KeyCode::Right => {
@@ -92,24 +97,15 @@ pub fn handle_insert_key(app: &mut App, key: KeyEvent) -> bool {
                 app.buffers[i].cursor_y += 1;
                 app.buffers[i].cursor_x = 0;
             }
+            app.clear_desired_x();
             false
         }
         KeyCode::Up => {
-            if app.buffers[i].cursor_y > 0 {
-                app.buffers[i].cursor_y -= 1;
-                let cy = app.buffers[i].cursor_y;
-                let line_len = app.buffers[i].lines[cy].chars().count();
-                app.buffers[i].cursor_x = app.buffers[i].cursor_x.min(line_len);
-            }
+            app.move_up();
             false
         }
         KeyCode::Down => {
-            if app.buffers[i].cursor_y + 1 < app.buffers[i].lines.len() {
-                app.buffers[i].cursor_y += 1;
-                let cy = app.buffers[i].cursor_y;
-                let line_len = app.buffers[i].lines[cy].chars().count();
-                app.buffers[i].cursor_x = app.buffers[i].cursor_x.min(line_len);
-            }
+            app.move_down();
             false
         }
         KeyCode::Home => {
@@ -272,20 +268,15 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) -> bool {
             if app.buffers[i].cursor_x > 0 {
                 app.buffers[i].cursor_x -= 1;
             }
+            app.clear_desired_x();
             false
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            if app.buffers[i].cursor_y + 1 < app.buffers[i].lines.len() {
-                app.buffers[i].cursor_y += 1;
-                app.clamp_cursor();
-            }
+            app.move_down();
             false
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            if app.buffers[i].cursor_y > 0 {
-                app.buffers[i].cursor_y -= 1;
-                app.clamp_cursor();
-            }
+            app.move_up();
             false
         }
         KeyCode::Char('l') | KeyCode::Right => {
@@ -294,33 +285,40 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) -> bool {
             if line_len > 0 && app.buffers[i].cursor_x < line_len - 1 {
                 app.buffers[i].cursor_x += 1;
             }
+            app.clear_desired_x();
             false
         }
         KeyCode::Char('0') | KeyCode::Home => {
             app.buffers[i].cursor_x = 0;
+            app.clear_desired_x();
             false
         }
         KeyCode::Char('$') | KeyCode::End => {
             let cy = app.buffers[i].cursor_y;
             let line_len = app.buffers[i].lines[cy].chars().count();
             app.buffers[i].cursor_x = if line_len > 0 { line_len - 1 } else { 0 };
+            app.clear_desired_x();
             false
         }
         KeyCode::Char('w') => {
             move_word_forward(app);
+            app.clear_desired_x();
             false
         }
         KeyCode::Char('e') => {
             move_word_end(app);
+            app.clear_desired_x();
             false
         }
         KeyCode::Char('b') => {
             move_word_backward(app);
+            app.clear_desired_x();
             false
         }
         KeyCode::Char('G') => {
             app.buffers[i].cursor_y = app.buffers[i].lines.len() - 1;
             app.clamp_cursor();
+            app.clear_desired_x();
             false
         }
         KeyCode::Char('f') => {
@@ -638,6 +636,7 @@ fn handle_easy_motion_key(app: &mut App, key: KeyEvent) -> bool {
                 let i = app.active_tab;
                 app.buffers[i].cursor_y = line_idx;
                 app.buffers[i].cursor_x = char_col;
+                app.clear_desired_x();
                 app.easy_motion = None;
                 app.message = None;
                 false
@@ -667,23 +666,18 @@ pub fn handle_visual_key(app: &mut App, key: KeyEvent) -> bool {
             false
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            if app.buffers[i].cursor_y + 1 < app.buffers[i].lines.len() {
-                app.buffers[i].cursor_y += 1;
-                app.clamp_cursor();
-            }
+            app.move_down();
             false
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            if app.buffers[i].cursor_y > 0 {
-                app.buffers[i].cursor_y -= 1;
-                app.clamp_cursor();
-            }
+            app.move_up();
             false
         }
         KeyCode::Char('h') | KeyCode::Left => {
             if app.buffers[i].cursor_x > 0 {
                 app.buffers[i].cursor_x -= 1;
             }
+            app.clear_desired_x();
             false
         }
         KeyCode::Char('l') | KeyCode::Right => {
@@ -692,6 +686,7 @@ pub fn handle_visual_key(app: &mut App, key: KeyEvent) -> bool {
             if line_len > 0 && app.buffers[i].cursor_x < line_len - 1 {
                 app.buffers[i].cursor_x += 1;
             }
+            app.clear_desired_x();
             false
         }
         KeyCode::Char('w') => {

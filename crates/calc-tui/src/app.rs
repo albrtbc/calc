@@ -50,6 +50,9 @@ pub struct Buffer {
     pub lines: Vec<String>,
     pub cursor_x: usize,
     pub cursor_y: usize,
+    /// Remembered column for vertical movement (like vim's "virtual column").
+    /// Set to `None` when cursor_x changes from non-vertical actions.
+    pub desired_x: Option<usize>,
     pub scroll_offset: usize,
     pub results: Vec<calc_core::LineResult>,
     pub file_path: Option<String>,
@@ -66,6 +69,7 @@ impl Buffer {
             lines: vec![String::new()],
             cursor_x: 0,
             cursor_y: 0,
+            desired_x: None,
             scroll_offset: 0,
             results: vec![],
             file_path: None,
@@ -408,21 +412,11 @@ impl App {
                     return;
                 }
                 KeyCode::Up => {
-                    if self.buffers[i].cursor_y > 0 {
-                        self.buffers[i].cursor_y -= 1;
-                        let cy = self.buffers[i].cursor_y;
-                        let line_len = self.buffers[i].lines[cy].chars().count();
-                        self.buffers[i].cursor_x = self.buffers[i].cursor_x.min(line_len);
-                    }
+                    self.move_up();
                     return;
                 }
                 KeyCode::Down => {
-                    if self.buffers[i].cursor_y + 1 < self.buffers[i].lines.len() {
-                        self.buffers[i].cursor_y += 1;
-                        let cy = self.buffers[i].cursor_y;
-                        let line_len = self.buffers[i].lines[cy].chars().count();
-                        self.buffers[i].cursor_x = self.buffers[i].cursor_x.min(line_len);
-                    }
+                    self.move_down();
                     return;
                 }
                 KeyCode::Left => {
@@ -721,6 +715,51 @@ impl App {
         if self.buffers[i].cursor_y >= self.buffers[i].scroll_offset + visible_height {
             self.buffers[i].scroll_offset = self.buffers[i].cursor_y - visible_height + 1;
         }
+    }
+
+    /// Move cursor vertically preserving the desired column (like vim).
+    pub fn move_up(&mut self) {
+        let i = self.active_tab;
+        if self.buffers[i].cursor_y == 0 {
+            return;
+        }
+        // Remember current x as desired column if not already set
+        if self.buffers[i].desired_x.is_none() {
+            self.buffers[i].desired_x = Some(self.buffers[i].cursor_x);
+        }
+        self.buffers[i].cursor_y -= 1;
+        let target = self.buffers[i].desired_x.unwrap();
+        let cy = self.buffers[i].cursor_y;
+        let line_len = self.buffers[i].lines[cy].chars().count();
+        if self.mode == Mode::Normal || self.mode == Mode::Visual {
+            self.buffers[i].cursor_x = if line_len == 0 { 0 } else { target.min(line_len - 1) };
+        } else {
+            self.buffers[i].cursor_x = target.min(line_len);
+        }
+    }
+
+    pub fn move_down(&mut self) {
+        let i = self.active_tab;
+        if self.buffers[i].cursor_y + 1 >= self.buffers[i].lines.len() {
+            return;
+        }
+        if self.buffers[i].desired_x.is_none() {
+            self.buffers[i].desired_x = Some(self.buffers[i].cursor_x);
+        }
+        self.buffers[i].cursor_y += 1;
+        let target = self.buffers[i].desired_x.unwrap();
+        let cy = self.buffers[i].cursor_y;
+        let line_len = self.buffers[i].lines[cy].chars().count();
+        if self.mode == Mode::Normal || self.mode == Mode::Visual {
+            self.buffers[i].cursor_x = if line_len == 0 { 0 } else { target.min(line_len - 1) };
+        } else {
+            self.buffers[i].cursor_x = target.min(line_len);
+        }
+    }
+
+    /// Clear desired_x — call this after any horizontal cursor movement or edit.
+    pub fn clear_desired_x(&mut self) {
+        self.buffers[self.active_tab].desired_x = None;
     }
 
     pub fn clamp_cursor(&mut self) {
