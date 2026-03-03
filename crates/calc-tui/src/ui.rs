@@ -11,6 +11,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     // Ensure the cursor row is within the visible window before rendering
     let visible_h = app.visible_height(area.height);
+    app.last_visible_height = visible_h;
     app.ensure_cursor_visible(visible_h);
 
     // Determine if we need a bottom input bar (command mode or prompt)
@@ -251,8 +252,75 @@ fn render_editor(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let paragraph = Paragraph::new(text_lines);
     frame.render_widget(paragraph, editor_area);
 
-    // Position the terminal cursor — but not when in command mode or prompt
-    if app.mode != Mode::Command && app.prompt.is_none() {
+    // EasyMotion overlay
+    if let Some(ref em) = app.easy_motion {
+        let frame_buf = frame.buffer_mut();
+
+        // Dim all editor text
+        for y in editor_area.y..editor_area.y + editor_area.height {
+            for x in editor_area.x..editor_area.x + editor_area.width {
+                if let Some(cell) = frame_buf.cell_mut(Position::new(x, y)) {
+                    cell.set_style(Style::default().fg(Color::Rgb(69, 71, 90)));
+                }
+            }
+        }
+
+        // Also dim gutter
+        for y in gutter_area.y..gutter_area.y + gutter_area.height {
+            for x in gutter_area.x..gutter_area.x + gutter_area.width {
+                if let Some(cell) = frame_buf.cell_mut(Position::new(x, y)) {
+                    cell.set_style(Style::default().fg(Color::Rgb(69, 71, 90)));
+                }
+            }
+        }
+
+        let search_len = em.search.chars().count();
+
+        // Highlight matched text spans (orange) and overlay labels
+        for (idx, &(line_idx, char_col)) in em.matches.iter().enumerate() {
+            if line_idx < start || line_idx >= end {
+                continue;
+            }
+            let screen_y = editor_area.y + (line_idx - start) as u16;
+
+            // Highlight the matched text in orange
+            for offset in 0..search_len {
+                let screen_x = editor_area.x + (char_col + offset) as u16;
+                if screen_x < editor_area.x + editor_area.width
+                    && screen_y < editor_area.y + editor_area.height
+                {
+                    if let Some(cell) = frame_buf.cell_mut(Position::new(screen_x, screen_y)) {
+                        cell.set_style(
+                            Style::default()
+                                .fg(Color::Rgb(250, 179, 135))
+                                .add_modifier(Modifier::BOLD),
+                        );
+                    }
+                }
+            }
+
+            // Overlay label at match position (magenta bg, bold white)
+            if idx < em.labels.len() {
+                let label_x = editor_area.x + char_col as u16;
+                if label_x < editor_area.x + editor_area.width
+                    && screen_y < editor_area.y + editor_area.height
+                {
+                    if let Some(cell) = frame_buf.cell_mut(Position::new(label_x, screen_y)) {
+                        cell.set_char(em.labels[idx]);
+                        cell.set_style(
+                            Style::default()
+                                .fg(Color::White)
+                                .bg(Color::Rgb(203, 166, 247))
+                                .add_modifier(Modifier::BOLD),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // Position the terminal cursor — but not when in command mode, prompt, or EasyMotion
+    if app.mode != Mode::Command && app.prompt.is_none() && app.easy_motion.is_none() {
         let cursor_screen_y =
             editor_area.y + (buf.cursor_y.saturating_sub(buf.scroll_offset)) as u16;
         let cursor_screen_x = editor_area.x + buf.cursor_x as u16;

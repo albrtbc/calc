@@ -1,5 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use crate::app::{App, Selection, SelectionKind};
+use crate::app::{App, EasyMotionState, Selection, SelectionKind};
 use crate::mode::Mode;
 
 // ---------------------------------------------------------------------------
@@ -175,6 +175,11 @@ pub fn handle_insert_mode_key(app: &mut App, key: KeyEvent) -> bool {
 // ---------------------------------------------------------------------------
 
 pub fn handle_normal_key(app: &mut App, key: KeyEvent) -> bool {
+    // EasyMotion intercept: if active, route all keys there
+    if app.easy_motion.is_some() {
+        return handle_easy_motion_key(app, key);
+    }
+
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         return false;
     }
@@ -228,6 +233,18 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) -> bool {
             true
         }
         KeyCode::Char('v') => {
+            app.mode = Mode::Visual;
+            let cy = app.buffers[i].cursor_y;
+            let cx = app.buffers[i].cursor_x;
+            app.buffers[i].selection = Some(Selection {
+                anchor_y: cy,
+                anchor_x: cx,
+                kind: SelectionKind::Char,
+            });
+            app.message = None;
+            false
+        }
+        KeyCode::Char('V') => {
             app.mode = Mode::Visual;
             let cy = app.buffers[i].cursor_y;
             let cx = app.buffers[i].cursor_x;
@@ -301,6 +318,15 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) -> bool {
             app.clamp_cursor();
             false
         }
+        KeyCode::Char('f') => {
+            app.easy_motion = Some(EasyMotionState {
+                search: String::new(),
+                matches: Vec::new(),
+                labels: Vec::new(),
+            });
+            app.message = Some("EasyMotion: type to search".to_string());
+            false
+        }
 
         // -- Editing --
         KeyCode::Char('x') => {
@@ -361,7 +387,58 @@ fn handle_pending_key(app: &mut App, pending: char, key: KeyEvent) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Vim Visual mode (line-wise)
+// EasyMotion key handler
+// ---------------------------------------------------------------------------
+
+fn handle_easy_motion_key(app: &mut App, key: KeyEvent) -> bool {
+    match key.code {
+        KeyCode::Esc => {
+            app.easy_motion = None;
+            app.message = None;
+            false
+        }
+        KeyCode::Backspace => {
+            if let Some(ref mut em) = app.easy_motion {
+                if em.search.pop().is_none() {
+                    app.easy_motion = None;
+                    app.message = None;
+                    return false;
+                }
+            }
+            app.recompute_easy_motion();
+            false
+        }
+        KeyCode::Char(c) => {
+            // Check if c is a label → jump
+            let jump_target = app.easy_motion.as_ref().and_then(|em| {
+                em.labels
+                    .iter()
+                    .position(|&l| l == c)
+                    .map(|idx| em.matches[idx])
+            });
+
+            if let Some((line_idx, char_col)) = jump_target {
+                let i = app.active_tab;
+                app.buffers[i].cursor_y = line_idx;
+                app.buffers[i].cursor_x = char_col;
+                app.easy_motion = None;
+                app.message = None;
+                false
+            } else {
+                // Extend search
+                if let Some(ref mut em) = app.easy_motion {
+                    em.search.push(c);
+                }
+                app.recompute_easy_motion();
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Vim Visual mode
 // ---------------------------------------------------------------------------
 
 pub fn handle_visual_key(app: &mut App, key: KeyEvent) -> bool {
@@ -400,41 +477,66 @@ pub fn handle_visual_key(app: &mut App, key: KeyEvent) -> bool {
             }
             false
         }
+        KeyCode::Char('w') => {
+            move_word_forward(app);
+            false
+        }
+        KeyCode::Char('e') => {
+            move_word_end(app);
+            false
+        }
+        KeyCode::Char('b') => {
+            move_word_backward(app);
+            false
+        }
+        KeyCode::Char('0') | KeyCode::Home => {
+            app.buffers[i].cursor_x = 0;
+            false
+        }
+        KeyCode::Char('$') | KeyCode::End => {
+            let cy = app.buffers[i].cursor_y;
+            let line_len = app.buffers[i].lines[cy].chars().count();
+            app.buffers[i].cursor_x = if line_len > 0 { line_len - 1 } else { 0 };
+            false
+        }
         KeyCode::Char('G') => {
             app.buffers[i].cursor_y = app.buffers[i].lines.len() - 1;
             app.clamp_cursor();
             false
         }
         KeyCode::Char('y') => {
-            if let Some(sel) = &app.buffers[i].selection {
-                let from = sel.anchor_y.min(app.buffers[i].cursor_y);
-                let to = sel.anchor_y.max(app.buffers[i].cursor_y);
-                app.buffers[i].yank_buffer = app.buffers[i].lines[from..=to].to_vec();
-                let count = to - from + 1;
-                app.message = Some(format!(
-                    "{} line{} yanked",
-                    count,
-                    if count == 1 { "" } else { "s" }
-                ));
+            if let Some(sel) = app.buffers[i].selection.take() {
+                if sel.kind == SelectionKind::Line {
+                    let ((sy, _), (ey, _)) = app.ordered_selection(&sel);
+                    app.buffers[i].yank_buffer = app.buffers[i].lines[sy..=ey].to_vec();
+                    let count = ey - sy + 1;
+                    app.message = Some(format!(
+                        "{} line{} yanked",
+                        count,
+                        if count == 1 { "" } else { "s" }
+                    ));
+                    app.buffers[i].cursor_y = sy;
+                } else {
+                    let text = app.extract_selection_text(&sel);
+                    app.buffers[i].yank_buffer = vec![text];
+                    app.message = Some("Yanked".to_string());
+                }
                 app.mode = Mode::Normal;
-                app.buffers[i].selection = None;
-                app.buffers[i].cursor_y = from;
                 app.clamp_cursor();
             }
             false
         }
         KeyCode::Char('d') => {
-            if let Some(sel) = &app.buffers[i].selection {
-                let from = sel.anchor_y.min(app.buffers[i].cursor_y);
-                let to = sel.anchor_y.max(app.buffers[i].cursor_y);
-                app.buffers[i].yank_buffer = app.buffers[i].lines[from..=to].to_vec();
-                app.buffers[i].lines.drain(from..=to);
-                if app.buffers[i].lines.is_empty() {
-                    app.buffers[i].lines.push(String::new());
+            if let Some(sel) = app.buffers[i].selection.take() {
+                if sel.kind == SelectionKind::Line {
+                    let ((sy, _), (ey, _)) = app.ordered_selection(&sel);
+                    app.buffers[i].yank_buffer = app.buffers[i].lines[sy..=ey].to_vec();
+                } else {
+                    let text = app.extract_selection_text(&sel);
+                    app.buffers[i].yank_buffer = vec![text];
                 }
+                app.delete_selection_range(&sel);
                 app.mode = Mode::Normal;
-                app.buffers[i].selection = None;
-                app.buffers[i].cursor_y = from.min(app.buffers[i].lines.len() - 1);
                 app.clamp_cursor();
                 return true;
             }

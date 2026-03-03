@@ -83,6 +83,14 @@ impl Buffer {
     }
 }
 
+// ── EasyMotion ───────────────────────────────────────────────────────────────
+
+pub struct EasyMotionState {
+    pub search: String,
+    pub matches: Vec<(usize, usize)>, // (line_idx, char_col)
+    pub labels: Vec<char>,            // parallel to matches
+}
+
 // ── App ──────────────────────────────────────────────────────────────────────
 
 pub struct App {
@@ -95,6 +103,8 @@ pub struct App {
     pub command_buffer: String,
     pub pending_key: Option<char>,
     pub prompt: Option<Prompt>,
+    pub easy_motion: Option<EasyMotionState>,
+    pub last_visible_height: usize,
 }
 
 impl App {
@@ -117,6 +127,8 @@ impl App {
             command_buffer: String::new(),
             pending_key: None,
             prompt: None,
+            easy_motion: None,
+            last_visible_height: 20,
         }
     }
 
@@ -431,6 +443,8 @@ impl App {
                 }
             }
             Mode::Insert => {
+                // Safety: clear EasyMotion if mode changed away from Normal
+                self.easy_motion = None;
                 let changed = input::handle_insert_mode_key(self, key);
                 if changed {
                     self.buffers[i].dirty = true;
@@ -438,6 +452,8 @@ impl App {
                 }
             }
             Mode::Visual => {
+                // Safety: clear EasyMotion if mode changed away from Normal
+                self.easy_motion = None;
                 let changed = input::handle_visual_key(self, key);
                 if changed {
                     self.buffers[i].dirty = true;
@@ -445,6 +461,8 @@ impl App {
                 }
             }
             Mode::Command => {
+                // Safety: clear EasyMotion if mode changed away from Normal
+                self.easy_motion = None;
                 input::handle_command_key(self, key);
             }
         }
@@ -820,7 +838,7 @@ impl App {
 
     // ── Selection helpers ────────────────────────────────────────────────
 
-    fn ordered_selection(&self, sel: &Selection) -> ((usize, usize), (usize, usize)) {
+    pub fn ordered_selection(&self, sel: &Selection) -> ((usize, usize), (usize, usize)) {
         let b = &self.buffers[self.active_tab];
         let a = (sel.anchor_y, sel.anchor_x);
         let c = (b.cursor_y, b.cursor_x);
@@ -831,7 +849,7 @@ impl App {
         }
     }
 
-    fn extract_selection_text(&self, sel: &Selection) -> String {
+    pub fn extract_selection_text(&self, sel: &Selection) -> String {
         let b = &self.buffers[self.active_tab];
         if sel.kind == SelectionKind::Line {
             let (start, end) = self.ordered_selection(sel);
@@ -857,7 +875,7 @@ impl App {
         }
     }
 
-    fn delete_selection_range(&mut self, sel: &Selection) {
+    pub fn delete_selection_range(&mut self, sel: &Selection) {
         let ((sy, sx), (ey, ex)) = self.ordered_selection(sel);
         let i = self.active_tab;
 
@@ -895,6 +913,73 @@ impl App {
         }
         self.buffers[i].cursor_y = sy;
         self.buffers[i].cursor_x = sx;
+    }
+
+    // ── EasyMotion ────────────────────────────────────────────────────────
+
+    pub fn recompute_easy_motion(&mut self) {
+        const LABEL_POOL: &[char] = &[
+            'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';',
+            'w', 'e', 'r', 'u', 'i', 'o', 'p',
+        ];
+
+        let em = match self.easy_motion.as_mut() {
+            Some(em) => em,
+            None => return,
+        };
+
+        let search = &em.search;
+        if search.is_empty() {
+            em.matches.clear();
+            em.labels.clear();
+            return;
+        }
+
+        let b = &self.buffers[self.active_tab];
+        let start = b.scroll_offset;
+        let end = (start + self.last_visible_height).min(b.lines.len());
+        let search_lower = search.to_lowercase();
+
+        let mut matches = Vec::new();
+        let mut next_chars = std::collections::HashSet::new();
+
+        for line_idx in start..end {
+            let line = &b.lines[line_idx];
+            let line_lower = line.to_lowercase();
+            let search_len = search_lower.len();
+            let mut search_start = 0;
+            while let Some(pos) = line_lower[search_start..].find(&search_lower) {
+                let char_col = line[..search_start + pos].chars().count();
+                matches.push((line_idx, char_col));
+
+                // Collect the char right after the match
+                let after_byte = search_start + pos + search_lower.len();
+                if after_byte < line_lower.len() {
+                    if let Some(c) = line_lower[after_byte..].chars().next() {
+                        next_chars.insert(c);
+                    }
+                }
+
+                search_start += pos + search_len.max(1);
+                if search_start >= line_lower.len() {
+                    break;
+                }
+            }
+        }
+
+        let available: Vec<char> = LABEL_POOL
+            .iter()
+            .copied()
+            .filter(|c| !next_chars.contains(c))
+            .collect();
+
+        let label_count = matches.len().min(available.len());
+        let labels: Vec<char> = available[..label_count].to_vec();
+        // Truncate matches to the number of available labels
+        matches.truncate(label_count);
+
+        em.matches = matches;
+        em.labels = labels;
     }
 
     // ── Command execution ────────────────────────────────────────────────
