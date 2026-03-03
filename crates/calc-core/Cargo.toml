@@ -1,0 +1,10 @@
+[package]
+name = "calc-core"
+version = "0.1.0"
+edition = "2021"
+description = "Pure Rust math engine for Calc"
+
+[dependencies]
+# none — pure Rust
+
+[dev-dependencies]
