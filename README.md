@@ -12,22 +12,28 @@ Real-time notepad calculator. A math engine in pure Rust (zero dependencies) wit
   sqrt(144)                        = 12
 ```
 
-## Build
+## Install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/albrtbc/calc/main/install.sh | sh
+```
+
+Or specify a custom directory:
+
+```sh
+INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/albrtbc/calc/main/install.sh | sh
+```
+
+Supports Linux and macOS (amd64/arm64). Installs to `/usr/local/bin` by default.
+
+### Build from source
 
 Requires Rust 1.70+ ([install](https://rustup.rs/)).
 
 ```sh
 git clone https://github.com/albrtbc/calc && cd calc
-cargo build --release
-```
-
-### Install
-
-```sh
 cargo install --path crates/calc-tui
 ```
-
-This installs the `calc` binary to `~/.cargo/bin/`.
 
 ## Usage
 
