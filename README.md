@@ -17,7 +17,7 @@ Real-time notepad calculator. A math engine in pure Rust (zero dependencies) wit
 Requires Rust 1.70+ ([install](https://rustup.rs/)).
 
 ```sh
-git clone <repo-url> && cd calc
+git clone https://github.com/albrtbc/calc && cd calc
 cargo build --release
 ```
 
@@ -55,7 +55,8 @@ calc --vim notes.calc
 |-----|--------|
 | `Ctrl+Q` | Quit (prompts if unsaved changes) |
 | `Ctrl+S` | Save (prompts for filename if none set) |
-| `Ctrl+N` | New buffer |
+| `Ctrl+N` | New buffer tab |
+| `Ctrl+W` | Close current tab |
 
 **Navigation:**
 
@@ -64,6 +65,7 @@ calc --vim notes.calc
 | `Up` / `Down` / `Left` / `Right` | Move cursor |
 | `Home` / `End` | Start / end of line |
 | `PageUp` / `PageDown` | Scroll 10 lines |
+| `Ctrl+PageDown` / `Ctrl+PageUp` | Next / previous tab |
 | `Tab` | Insert 2 spaces |
 
 **Selection:**
@@ -102,6 +104,7 @@ Clipboard operations use the system clipboard (compatible with macOS, Linux X11/
 | `Ctrl+X` | Cut current line (or selection) to clipboard |
 | `Ctrl+V` | Paste from system clipboard |
 | `Ctrl+D` | Delete current line (copies to clipboard) |
+| `Ctrl+Y` | Copy current line's result to clipboard |
 
 ### Vim Mode (`--vim`)
 
@@ -113,20 +116,8 @@ Launch with `calc --vim` to enable modal editing.
 |------|-------------|
 | Normal | Navigate and edit with vim keys (default on start) |
 | Insert | Type text freely (`i`, `a`, `o`, `O` to enter) |
-| Visual | Select lines (`v` to enter) |
+| Visual | Select text (`v` for char-wise, `V` for line-wise) |
 | Command | Execute commands (`:` to enter) |
-
-**Normal mode — mode transitions:**
-
-| Key | Action |
-|-----|--------|
-| `i` | Enter Insert mode |
-| `a` | Enter Insert mode after cursor |
-| `A` | Enter Insert mode at end of line |
-| `o` | Open line below and enter Insert |
-| `O` | Open line above and enter Insert |
-| `v` | Enter Visual (line) mode |
-| `:` | Enter Command mode |
 
 **Normal mode — navigation:**
 
@@ -140,6 +131,45 @@ Launch with `calc --vim` to enable modal editing.
 | `b` | Move to previous word start |
 | `gg` | Go to first line |
 | `G` | Go to last line |
+| `g<number>` | Go to line number (e.g. `g15` then Enter) |
+| `gt` / `gT` | Next / previous tab |
+| `f<char>` | EasyMotion: jump to any occurrence of `<char>` on screen |
+
+Vertical movement (`j`/`k`) preserves your horizontal cursor position across short or empty lines, matching real vim behavior.
+
+**Normal mode — mode transitions:**
+
+| Key | Action |
+|-----|--------|
+| `i` | Enter Insert mode |
+| `a` | Enter Insert mode after cursor |
+| `A` | Enter Insert mode at end of line |
+| `o` | Open line below and enter Insert |
+| `O` | Open line above and enter Insert |
+| `v` | Enter Visual (char) mode |
+| `V` | Enter Visual (line) mode |
+| `:` | Enter Command mode |
+
+**Normal mode — editing:**
+
+| Key | Action |
+|-----|--------|
+| `x` | Delete character under cursor |
+| `dd` | Delete current line |
+| `diw` | Delete inner word |
+| `cc` | Change (replace) current line |
+| `cw` / `ce` | Change word forward |
+| `cb` | Change word backward |
+| `ciw` | Change inner word |
+| `c$` | Change to end of line |
+| `c0` | Change to start of line |
+| `C` | Change to end of line |
+| `s` | Substitute character (delete + insert) |
+| `S` | Substitute line (clear + insert) |
+| `yy` | Yank (copy) current line |
+| `yr` | Copy current line's result to clipboard |
+| `p` | Paste below |
+| `P` | Paste above |
 
 **Normal mode — undo / redo:**
 
@@ -148,32 +178,15 @@ Launch with `calc --vim` to enable modal editing.
 | `u` | Undo |
 | `Ctrl+R` | Redo |
 
-**Normal mode — editing:**
-
-| Key | Action |
-|-----|--------|
-| `x` | Delete character under cursor |
-| `dd` | Delete current line |
-| `yy` | Yank (copy) current line |
-| `p` | Paste below |
-| `P` | Paste above |
-
-**Insert mode:**
-
-| Key | Action |
-|-----|--------|
-| `Esc` | Return to Normal mode |
-| All other keys | Standard text editing (arrows, Home/End, PgUp/PgDn, Tab, etc.) |
-
-**Visual mode (line-wise):**
+**Visual mode:**
 
 | Key | Action |
 |-----|--------|
 | `j` / `k` | Extend selection down / up |
 | `h` / `l` | Move cursor left / right |
 | `G` | Extend selection to last line |
-| `d` | Delete selected lines |
-| `y` | Yank selected lines |
+| `d` | Delete selected text |
+| `y` | Yank selected text |
 | `Esc` | Cancel selection |
 
 **Command mode:**
@@ -185,13 +198,33 @@ Launch with `calc --vim` to enable modal editing.
 | `:q` | Quit (warns if unsaved changes) |
 | `:q!` | Force quit without saving |
 | `:wq` / `:x` | Save and quit |
+| `:tabnew` | New buffer tab |
+| `:tabn` | Next tab |
+| `:tabp` | Previous tab |
 | `Esc` | Cancel command |
+
+### Mouse
+
+| Action | Effect |
+|--------|--------|
+| Click on editor | Move cursor to position |
+| Click on tab bar | Switch to tab |
+| Click on result | Copy result to clipboard |
+| Drag | Select text (enters Visual mode in vim) |
+| Double-click | Select word under cursor |
+| Scroll wheel | Scroll 3 lines up / down |
+
+### Cursorline
+
+The current line is highlighted with a subtle background color across both the editor and results panels, making it easy to identify which result belongs to the line you're editing.
 
 ### Notes
 
 - The `.calc` extension is added automatically when saving without one.
 - Opening a non-existent file (`calc notes.calc`) creates it on first save.
 - The left pane is an editor, the right pane shows results in real-time as you type.
+- Errors are isolated per line — a syntax error on one line doesn't affect others.
+- Decimal numbers can use either `.` or `,` as separator (`3.5` and `3,5` both work).
 
 ### CLI Eval
 
@@ -256,6 +289,8 @@ food = 400
 0b11111111       # binary (255)
 0o377            # octal (255)
 1.5e3            # scientific (1500)
+1_000_000        # underscores as separators
+3,5              # decimal comma (3.5)
 ```
 
 ### Percentages
