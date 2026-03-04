@@ -43,4 +43,4 @@ else
 fi
 
 echo "calc installed to ${INSTALL_DIR}/calc"
-calc --version 2>/dev/null || true
+"${INSTALL_DIR}/calc" --version 2>/dev/null || true
