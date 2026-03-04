@@ -30,7 +30,7 @@ pub fn copy(text: &str) {
             if let Some(ref mut stdin) = child.stdin {
                 let _ = stdin.write_all(text.as_bytes());
             }
-            let _ = child.wait();
+            drop(child); // fire-and-forget, don't block the UI
             return;
         }
     }

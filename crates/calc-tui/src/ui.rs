@@ -1,9 +1,19 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph};
 
-use crate::app::{App, SelectionKind};
+use crate::app::{App, Buffer, SelectionKind};
 use crate::mode::{EditStyle, Mode};
 use crate::theme::Theme;
+
+fn gutter_width(buf: &Buffer) -> usize {
+    let total_lines = buf.lines.len();
+    let digit_count = if total_lines == 0 {
+        1
+    } else {
+        (total_lines as f64).log10().floor() as usize + 1
+    };
+    digit_count.max(2) + 1
+}
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let theme = Theme::default();
@@ -63,14 +73,8 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             width: editor_outer.width.saturating_sub(2),
             height: editor_outer.height.saturating_sub(2),
         };
-        let total_lines = app.buffers[app.active_tab].lines.len();
-        let digit_count = if total_lines == 0 {
-            1
-        } else {
-            (total_lines as f64).log10().floor() as usize + 1
-        };
-        let gutter_width = (digit_count.max(2) + 1) as u16;
-        app.layout_gutter_width = gutter_width.min(inner.width);
+        let gw = gutter_width(&app.buffers[app.active_tab]) as u16;
+        app.layout_gutter_width = gw.min(inner.width);
         app.layout_editor_area = Some(Rect {
             x: inner.x + app.layout_gutter_width,
             y: inner.y,
@@ -130,22 +134,13 @@ fn render_tab_bar(frame: &mut Frame, app: &App, area: Rect, _theme: &Theme) {
 fn render_editor(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let buf = &app.buffers[app.active_tab];
 
-    let title = match &buf.file_path {
-        Some(p) => {
-            let name = p.rsplit('/').next().unwrap_or(p.as_str());
-            if buf.dirty {
-                format!(" {} [modified] ", name)
-            } else {
-                format!(" {} ", name)
-            }
-        }
-        None => {
-            if buf.dirty {
-                " untitled [modified] ".to_string()
-            } else {
-                " untitled ".to_string()
-            }
-        }
+    let base_name = buf.tab_name();
+    let title = if buf.dirty {
+        // tab_name() already includes '*' suffix when dirty, but we want "[modified]" here
+        let name = base_name.trim_end_matches('*');
+        format!(" {} [modified] ", name)
+    } else {
+        format!(" {} ", base_name)
     };
 
     let block = Block::default()
@@ -158,19 +153,13 @@ fn render_editor(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Compute gutter width for line numbers
-    let total_lines = buf.lines.len();
-    let digit_count = if total_lines == 0 {
-        1
-    } else {
-        (total_lines as f64).log10().floor() as usize + 1
-    };
-    let gutter_width = digit_count.max(2) + 1; // at least 2 digits + 1 space padding
+    let gw = gutter_width(buf);
+    let digit_count = gw - 1; // gutter_width = digit_count.max(2) + 1
 
     let gutter_area = Rect {
         x: inner.x,
         y: inner.y,
-        width: (gutter_width as u16).min(inner.width),
+        width: (gw as u16).min(inner.width),
         height: inner.height,
     };
     let editor_area = Rect {
@@ -290,7 +279,7 @@ fn render_editor(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
 
     // Fill rows below the last line with blank gutter + tilde
     for _ in end..(start + visible_lines) {
-        let blank_gutter = " ".repeat(gutter_width);
+        let blank_gutter = " ".repeat(gw);
         gutter_lines.push(Line::from(Span::styled(blank_gutter, gutter_dim)));
         text_lines.push(Line::from(Span::styled("~", theme.comment)));
     }

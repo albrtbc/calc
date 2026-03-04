@@ -118,24 +118,14 @@ pub fn call_function(name: &str, args: &[Value]) -> Result<Value> {
             if args.is_empty() {
                 return Err(CalcError::eval("min requires at least one argument"));
             }
-            let mut result = args[0].number;
-            for a in &args[1..] {
-                if a.number < result {
-                    result = a.number;
-                }
-            }
+            let result = args.iter().map(|a| a.number).fold(f64::INFINITY, f64::min);
             Ok(Value::new(result))
         }
         "max" => {
             if args.is_empty() {
                 return Err(CalcError::eval("max requires at least one argument"));
             }
-            let mut result = args[0].number;
-            for a in &args[1..] {
-                if a.number > result {
-                    result = a.number;
-                }
-            }
+            let result = args.iter().map(|a| a.number).fold(f64::NEG_INFINITY, f64::max);
             Ok(Value::new(result))
         }
         "factorial" | "fact" => {

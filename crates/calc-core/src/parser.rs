@@ -20,7 +20,7 @@ impl Parser {
         let mut all_lines: Vec<Vec<Token>> = Vec::new();
         let mut current: Vec<Token> = Vec::new();
 
-        for tok in self.tokens.clone() {
+        for tok in std::mem::take(&mut self.tokens) {
             match tok.kind {
                 TokenKind::Newline => {
                     all_lines.push(current.drain(..).collect());

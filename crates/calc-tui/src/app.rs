@@ -5,7 +5,7 @@ use ratatui::prelude::*;
 use ratatui::backend::CrosstermBackend;
 
 use crate::clipboard;
-use crate::input::{self, is_word_char};
+use crate::input::{self, is_word_char, char_to_byte_pos};
 use crate::mode::{Config, EditStyle, Mode};
 use crate::ui;
 
@@ -414,11 +414,11 @@ impl App {
 
             match key.code {
                 KeyCode::Left if has_ctrl => {
-                    input::move_word_backward_pub(self);
+                    input::move_word_backward(self);
                     return;
                 }
                 KeyCode::Right if has_ctrl => {
-                    input::move_word_forward_pub(self);
+                    input::move_word_forward(self);
                     return;
                 }
                 KeyCode::Home if has_ctrl => {
@@ -572,7 +572,7 @@ impl App {
                                     self.buffers[i].lines[line_idx].chars().collect();
                                 if !chars.is_empty() {
                                     let cx = char_col.min(chars.len() - 1);
-                                    let (start, end) = input::find_inner_word_pub(&chars, cx);
+                                    let (start, end) = input::find_inner_word(&chars, cx);
                                     self.buffers[i].cursor_y = line_idx;
                                     self.buffers[i].selection = Some(Selection {
                                         anchor_y: line_idx,
@@ -1411,11 +1411,4 @@ impl App {
             self.message = Some(format!("Unknown command: :{}", cmd));
         }
     }
-}
-
-fn char_to_byte_pos(s: &str, char_pos: usize) -> usize {
-    s.char_indices()
-        .nth(char_pos)
-        .map(|(i, _)| i)
-        .unwrap_or(s.len())
 }

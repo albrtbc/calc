@@ -394,15 +394,9 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) -> bool {
             true
         }
 
-        // -- Change (C = change to end of line) --
+        // -- Change (C = change to end of line, same as c$) --
         KeyCode::Char('C') => {
-            let cy = app.buffers[i].cursor_y;
-            let cx = app.buffers[i].cursor_x;
-            let line = &mut app.buffers[i].lines[cy];
-            let byte_pos = char_to_byte_pos(line, cx);
-            line.truncate(byte_pos);
-            app.mode = Mode::Insert;
-            app.message = None;
+            change_to_eol(app);
             true
         }
         KeyCode::Char('s') => {
@@ -421,12 +415,8 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) -> bool {
             true
         }
         KeyCode::Char('S') => {
-            // S: clear entire line, enter insert mode (same as cc)
-            let cy = app.buffers[i].cursor_y;
-            app.buffers[i].lines[cy] = String::new();
-            app.buffers[i].cursor_x = 0;
-            app.mode = Mode::Insert;
-            app.message = None;
+            // S: same as cc
+            clear_line_and_insert(app);
             true
         }
 
@@ -489,12 +479,7 @@ fn handle_pending_key(app: &mut App, pending: &str, key: KeyEvent) -> bool {
         }
         // -- c (change) combos --
         ("c", 'c') => {
-            let i = app.active_tab;
-            let cy = app.buffers[i].cursor_y;
-            app.buffers[i].lines[cy] = String::new();
-            app.buffers[i].cursor_x = 0;
-            app.mode = Mode::Insert;
-            app.message = None;
+            clear_line_and_insert(app);
             true
         }
         ("c", 'i') => {
@@ -558,14 +543,7 @@ fn handle_pending_key(app: &mut App, pending: &str, key: KeyEvent) -> bool {
             true
         }
         ("c", '$') => {
-            let i = app.active_tab;
-            let cy = app.buffers[i].cursor_y;
-            let cx = app.buffers[i].cursor_x;
-            let line = &mut app.buffers[i].lines[cy];
-            let byte_pos = char_to_byte_pos(line, cx);
-            line.truncate(byte_pos);
-            app.mode = Mode::Insert;
-            app.message = None;
+            change_to_eol(app);
             true
         }
         ("c", '0') => {
@@ -584,8 +562,30 @@ fn handle_pending_key(app: &mut App, pending: &str, key: KeyEvent) -> bool {
     }
 }
 
+/// Clear the current line and enter insert mode (used by `S` and `cc`).
+fn clear_line_and_insert(app: &mut App) {
+    let i = app.active_tab;
+    let cy = app.buffers[i].cursor_y;
+    app.buffers[i].lines[cy] = String::new();
+    app.buffers[i].cursor_x = 0;
+    app.mode = Mode::Insert;
+    app.message = None;
+}
+
+/// Delete from cursor to end of line and enter insert mode (used by `C` and `c$`).
+fn change_to_eol(app: &mut App) {
+    let i = app.active_tab;
+    let cy = app.buffers[i].cursor_y;
+    let cx = app.buffers[i].cursor_x;
+    let line = &mut app.buffers[i].lines[cy];
+    let byte_pos = char_to_byte_pos(line, cx);
+    line.truncate(byte_pos);
+    app.mode = Mode::Insert;
+    app.message = None;
+}
+
 /// Find the start and end (char indices) of the word under the cursor.
-fn find_inner_word(chars: &[char], cx: usize) -> (usize, usize) {
+pub(crate) fn find_inner_word(chars: &[char], cx: usize) -> (usize, usize) {
     let len = chars.len();
     if len == 0 {
         return (0, 0);
@@ -828,26 +828,10 @@ pub fn handle_command_key(app: &mut App, key: KeyEvent) {
 }
 
 // ---------------------------------------------------------------------------
-// Public word motion wrappers (for simple mode Ctrl+Shift selection)
-// ---------------------------------------------------------------------------
-
-pub fn move_word_forward_pub(app: &mut App) {
-    move_word_forward(app);
-}
-
-pub fn move_word_backward_pub(app: &mut App) {
-    move_word_backward(app);
-}
-
-pub fn find_inner_word_pub(chars: &[char], cx: usize) -> (usize, usize) {
-    find_inner_word(chars, cx)
-}
-
-// ---------------------------------------------------------------------------
 // Word motion helpers
 // ---------------------------------------------------------------------------
 
-fn move_word_forward(app: &mut App) {
+pub(crate) fn move_word_forward(app: &mut App) {
     let i = app.active_tab;
     let cy = app.buffers[i].cursor_y;
     let chars: Vec<char> = app.buffers[i].lines[cy].chars().collect();
@@ -955,7 +939,7 @@ fn move_word_end(app: &mut App) {
     app.buffers[i].cursor_x = pos;
 }
 
-fn move_word_backward(app: &mut App) {
+pub(crate) fn move_word_backward(app: &mut App) {
     let i = app.active_tab;
     let cy = app.buffers[i].cursor_y;
     let chars: Vec<char> = app.buffers[i].lines[cy].chars().collect();
@@ -999,7 +983,7 @@ pub fn is_word_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
-fn char_to_byte_pos(s: &str, char_pos: usize) -> usize {
+pub(crate) fn char_to_byte_pos(s: &str, char_pos: usize) -> usize {
     s.char_indices()
         .nth(char_pos)
         .map(|(i, _)| i)
