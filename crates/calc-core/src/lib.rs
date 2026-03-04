@@ -219,4 +219,19 @@ mod integration_tests {
         assert!(r[2].error.is_none());
         assert_eq!(r[2].display, "10");
     }
+
+    #[test]
+    fn test_custom_unit_conversion() {
+        // test = 100, some_other = 45 → 1 test in some_other = 100/45 ≈ 2.2222
+        let r = evaluate("test = 100\nsome_other = 45\n1 test in some_other");
+        assert!(r[2].error.is_none(), "Error: {:?}", r[2].error);
+        let v = r[2].value.as_ref().unwrap().number;
+        assert!((v - 100.0 / 45.0).abs() < 1e-10);
+
+        // Reverse: 1 some_other in test = 45/100 = 0.45
+        let r = evaluate("test = 100\nsome_other = 45\n1 some_other in test");
+        assert!(r[2].error.is_none(), "Error: {:?}", r[2].error);
+        let v = r[2].value.as_ref().unwrap().number;
+        assert!((v - 0.45).abs() < 1e-10);
+    }
 }

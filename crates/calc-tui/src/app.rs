@@ -130,6 +130,8 @@ pub struct App {
     pub layout_results_area: Option<ratatui::prelude::Rect>,
     /// For double-click detection.
     pub last_click: Option<(std::time::Instant, u16, u16)>,
+    /// Vim count prefix buffer (e.g. "15" in "15G").
+    pub count_buffer: String,
 }
 
 impl App {
@@ -159,6 +161,7 @@ impl App {
             layout_gutter_width: 0,
             layout_results_area: None,
             last_click: None,
+            count_buffer: String::new(),
         }
     }
 
@@ -1003,6 +1006,7 @@ impl App {
         let i = self.active_tab;
         let cy = self.buffers[i].cursor_y;
         let line = self.buffers[i].lines[cy].clone();
+        clipboard::copy(&line);
         self.buffers[i].yank_buffer = vec![line];
     }
 

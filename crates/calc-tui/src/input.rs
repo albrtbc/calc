@@ -1,5 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::app::{App, EasyMotionState, Selection, SelectionKind};
+use crate::clipboard;
 use crate::mode::Mode;
 
 // ---------------------------------------------------------------------------
@@ -189,8 +190,33 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) -> bool {
 
     // If there's a pending key sequence, handle the combo
     if let Some(pending) = app.pending_key.take() {
+        app.count_buffer.clear();
         return handle_pending_key(app, &pending, key);
     }
+
+    // Accumulate digits into count buffer (1-9 always, 0 only if buffer non-empty)
+    if let KeyCode::Char(c @ '1'..='9') = key.code {
+        app.count_buffer.push(c);
+        app.message = Some(app.count_buffer.clone());
+        return false;
+    }
+    if let KeyCode::Char('0') = key.code {
+        if !app.count_buffer.is_empty() {
+            app.count_buffer.push('0');
+            app.message = Some(app.count_buffer.clone());
+            return false;
+        }
+    }
+
+    // Take the count and clear buffer for the command about to execute
+    let count: Option<usize> = if app.count_buffer.is_empty() {
+        None
+    } else {
+        let n = app.count_buffer.parse::<usize>().ok();
+        app.count_buffer.clear();
+        app.message = None;
+        n
+    };
 
     match key.code {
         // -- Mode transitions --
@@ -316,7 +342,13 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) -> bool {
             false
         }
         KeyCode::Char('G') => {
-            app.buffers[i].cursor_y = app.buffers[i].lines.len() - 1;
+            if let Some(n) = count {
+                let target = n.saturating_sub(1);
+                let max = app.buffers[i].lines.len().saturating_sub(1);
+                app.buffers[i].cursor_y = target.min(max);
+            } else {
+                app.buffers[i].cursor_y = app.buffers[i].lines.len() - 1;
+            }
             app.clamp_cursor();
             app.clear_desired_x();
             false
@@ -413,29 +445,13 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) -> bool {
 fn handle_pending_key(app: &mut App, pending: &str, key: KeyEvent) -> bool {
     let ch = match key.code {
         KeyCode::Char(c) => c,
-        KeyCode::Enter if pending.starts_with("g#") => {
-            // Execute the goto-line jump on Enter
-            let digits = &pending[2..];
-            if let Ok(line_num) = digits.parse::<usize>() {
-                let target = line_num.saturating_sub(1);
-                let max = app.buffers[app.active_tab].lines.len().saturating_sub(1);
-                app.buffers[app.active_tab].cursor_y = target.min(max);
-                app.clamp_cursor();
-                app.clear_desired_x();
-            }
-            app.message = None;
-            return false;
-        }
-        KeyCode::Esc if pending.starts_with("g#") => {
-            app.message = None;
-            return false;
-        }
         _ => return false,
     };
 
     match (pending, ch) {
         ("d", 'd') => {
             let removed = app.delete_line();
+            clipboard::copy(&removed);
             app.buffers[app.active_tab].yank_buffer = vec![removed];
             true
         }
@@ -461,14 +477,6 @@ fn handle_pending_key(app: &mut App, pending: &str, key: KeyEvent) -> bool {
         ("g", 'g') => {
             app.buffers[app.active_tab].cursor_y = 0;
             app.clamp_cursor();
-            false
-        }
-        ("g", '0'..='9') => {
-            // Start accumulating line number: g5, g12, etc.
-            let mut num = String::from("g#");
-            num.push(ch);
-            app.pending_key = Some(num);
-            app.message = Some(format!("g{}", ch));
             false
         }
         ("g", 't') => {
@@ -571,28 +579,6 @@ fn handle_pending_key(app: &mut App, pending: &str, key: KeyEvent) -> bool {
             app.mode = Mode::Insert;
             app.message = None;
             true
-        }
-        _ if pending.starts_with("g#") => {
-            // g + line number accumulation
-            let digits = &pending[2..]; // extract digits after "g#"
-            if ch.is_ascii_digit() {
-                let mut num = pending.to_string();
-                num.push(ch);
-                app.pending_key = Some(num);
-                app.message = Some(format!("g{}{}", digits, ch));
-                false
-            } else {
-                // Jump to line (1-based → 0-based)
-                if let Ok(line_num) = digits.parse::<usize>() {
-                    let target = line_num.saturating_sub(1);
-                    let max = app.buffers[app.active_tab].lines.len().saturating_sub(1);
-                    app.buffers[app.active_tab].cursor_y = target.min(max);
-                    app.clamp_cursor();
-                    app.clear_desired_x();
-                }
-                app.message = None;
-                false
-            }
         }
         _ => false,
     }
@@ -771,7 +757,9 @@ pub fn handle_visual_key(app: &mut App, key: KeyEvent) -> bool {
             if let Some(sel) = app.buffers[i].selection.take() {
                 if sel.kind == SelectionKind::Line {
                     let ((sy, _), (ey, _)) = app.ordered_selection(&sel);
-                    app.buffers[i].yank_buffer = app.buffers[i].lines[sy..=ey].to_vec();
+                    let yanked = app.buffers[i].lines[sy..=ey].to_vec();
+                    clipboard::copy(&yanked.join("\n"));
+                    app.buffers[i].yank_buffer = yanked;
                     let count = ey - sy + 1;
                     app.message = Some(format!(
                         "{} line{} yanked",
@@ -781,6 +769,7 @@ pub fn handle_visual_key(app: &mut App, key: KeyEvent) -> bool {
                     app.buffers[i].cursor_y = sy;
                 } else {
                     let text = app.extract_selection_text(&sel);
+                    clipboard::copy(&text);
                     app.buffers[i].yank_buffer = vec![text];
                     app.message = Some("Yanked".to_string());
                 }
@@ -793,9 +782,12 @@ pub fn handle_visual_key(app: &mut App, key: KeyEvent) -> bool {
             if let Some(sel) = app.buffers[i].selection.take() {
                 if sel.kind == SelectionKind::Line {
                     let ((sy, _), (ey, _)) = app.ordered_selection(&sel);
-                    app.buffers[i].yank_buffer = app.buffers[i].lines[sy..=ey].to_vec();
+                    let yanked = app.buffers[i].lines[sy..=ey].to_vec();
+                    clipboard::copy(&yanked.join("\n"));
+                    app.buffers[i].yank_buffer = yanked;
                 } else {
                     let text = app.extract_selection_text(&sel);
+                    clipboard::copy(&text);
                     app.buffers[i].yank_buffer = vec![text];
                 }
                 app.delete_selection_range(&sel);

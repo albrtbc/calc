@@ -33,6 +33,8 @@ pub enum Unit {
     Minute,
     Hour,
     Day,
+    // Variable-based custom unit (name of a variable used as conversion rate)
+    Custom(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -42,6 +44,7 @@ pub enum UnitCategory {
     Temperature,
     Data,
     Time,
+    Custom,
 }
 
 impl Unit {
@@ -71,6 +74,7 @@ impl Unit {
             | Unit::Terabyte => UnitCategory::Data,
 
             Unit::Second | Unit::Minute | Unit::Hour | Unit::Day => UnitCategory::Time,
+            Unit::Custom(_) => UnitCategory::Custom,
         }
     }
 
@@ -172,6 +176,8 @@ fn to_base(value: f64, unit: &Unit) -> f64 {
         Unit::Day => value * 86_400.0,
         // Temperature handled separately
         Unit::Celsius | Unit::Fahrenheit | Unit::Kelvin => value,
+        // Custom units are handled in the evaluator, not here
+        Unit::Custom(_) => value,
     }
 }
 
@@ -206,6 +212,8 @@ fn from_base(value: f64, unit: &Unit) -> f64 {
         Unit::Day => value / 86_400.0,
         // Temperature handled separately
         Unit::Celsius | Unit::Fahrenheit | Unit::Kelvin => value,
+        // Custom units are handled in the evaluator, not here
+        Unit::Custom(_) => value,
     }
 }
 
@@ -255,6 +263,7 @@ impl fmt::Display for Unit {
             Unit::Minute => "min",
             Unit::Hour => "h",
             Unit::Day => "d",
+            Unit::Custom(ref name) => return write!(f, "{}", name),
         };
         write!(f, "{}", s)
     }

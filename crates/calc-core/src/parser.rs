@@ -241,13 +241,8 @@ impl LineParser {
         };
         self.advance(); // consume unit name token
 
-        let unit = Unit::from_str(&unit_str).ok_or_else(|| {
-            CalcError::new(
-                format!("Unknown unit: '{}'", unit_str),
-                unit_tok.line,
-                unit_tok.col,
-            )
-        })?;
+        let unit = Unit::from_str(&unit_str)
+            .unwrap_or_else(|| Unit::Custom(unit_str));
         Ok(Expr::Convert {
             expr: Box::new(expr),
             target_unit: unit,
@@ -322,12 +317,20 @@ impl LineParser {
             if let TokenKind::Ident(ref s) = self.peek().kind.clone() {
                 let s = s.clone();
                 // Check it's actually a unit and not a variable name followed by assignment
-                let next_next = self.peek_offset(1).map(|t| &t.kind);
+                let next_next = self.peek_offset(1).map(|t| t.kind.clone());
                 let is_unit = Unit::from_str(&s).is_some();
-                let is_func_call = next_next == Some(&TokenKind::LParen);
-                let is_assign = next_next == Some(&TokenKind::Eq);
-                if is_unit && !is_func_call && !is_assign {
-                    let unit = Unit::from_str(&s).unwrap();
+                let is_func_call = next_next == Some(TokenKind::LParen);
+                let is_assign = next_next == Some(TokenKind::Eq);
+                // Also treat as custom unit if followed by a conversion keyword
+                let followed_by_conv = matches!(
+                    next_next,
+                    Some(TokenKind::Keyword(Keyword::In))
+                        | Some(TokenKind::Keyword(Keyword::To))
+                        | Some(TokenKind::Keyword(Keyword::As))
+                );
+                if !is_func_call && !is_assign && (is_unit || followed_by_conv) {
+                    let unit = Unit::from_str(&s)
+                        .unwrap_or_else(|| Unit::Custom(s));
                     self.advance(); // consume unit ident
                     expr = Expr::Convert {
                         expr: Box::new(expr),

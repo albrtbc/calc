@@ -131,7 +131,7 @@ Launch with `calc --vim` to enable modal editing.
 | `b` | Move to previous word start |
 | `gg` | Go to first line |
 | `G` | Go to last line |
-| `g<number>` | Go to line number (e.g. `g15` then Enter) |
+| `<number>G` | Go to line number (e.g. `15G` jumps to line 15) |
 | `gt` / `gT` | Next / previous tab |
 | `f<char>` | EasyMotion: jump to any occurrence of `<char>` on screen |
 

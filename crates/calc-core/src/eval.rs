@@ -191,7 +191,7 @@ fn eval_expr(expr: &Expr, env: &mut Environment) -> Result<Value> {
 
         Expr::Convert { expr, target_unit } => {
             let v = eval_expr(expr, env)?;
-            convert_value(v, target_unit)
+            convert_value(v, target_unit, env)
         }
 
         Expr::Percentage(inner) => {
@@ -308,13 +308,28 @@ fn eval_binary_op(
 
 /// Convert a value to a target unit. If the value has no unit, interpret it as
 /// already being in the target unit's category base unit, or just attach the unit.
-fn convert_value(v: Value, target_unit: &Unit) -> Result<Value> {
-    match &v.unit {
-        Some(src_unit) => {
+fn convert_value(v: Value, target_unit: &Unit, env: &Environment) -> Result<Value> {
+    // Handle custom (variable-based) unit conversions:
+    // e.g. test = 100, some_other = 45 → "1 test in some_other" = 1 * (100/45)
+    match (&v.unit, target_unit) {
+        (Some(Unit::Custom(src_name)), Unit::Custom(tgt_name)) => {
+            let src_val = env.get(src_name).ok_or_else(|| {
+                CalcError::eval(format!("Undefined variable: '{}'", src_name))
+            })?;
+            let tgt_val = env.get(tgt_name).ok_or_else(|| {
+                CalcError::eval(format!("Undefined variable: '{}'", tgt_name))
+            })?;
+            if tgt_val.number == 0.0 {
+                return Err(CalcError::eval("Division by zero in conversion"));
+            }
+            let result = v.number * (src_val.number / tgt_val.number);
+            Ok(Value::with_unit(result, target_unit.clone()))
+        }
+        (Some(src_unit), _) => {
             let converted = Unit::convert(v.number, src_unit, target_unit)?;
             Ok(Value::with_unit(converted, target_unit.clone()))
         }
-        None => {
+        (None, _) => {
             // Unitless value: just attach the target unit (treat as literal "N unit")
             Ok(Value::with_unit(v.number, target_unit.clone()))
         }
