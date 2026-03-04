@@ -19,6 +19,8 @@ pub struct Theme {
     pub title: Style,
     pub status_bar: Style,
     pub cursor: Style,
+    pub cursorline_editor: Style,
+    pub cursorline_results: Style,
 }
 
 impl Default for Theme {
@@ -47,6 +49,8 @@ impl Default for Theme {
             cursor: Style::default()
                 .bg(Color::Rgb(205, 214, 244))
                 .fg(Color::Rgb(30, 30, 46)),
+            cursorline_editor: Style::default().bg(Color::Rgb(40, 40, 56)),
+            cursorline_results: Style::default().bg(Color::Rgb(33, 33, 47)),
         }
     }
 }

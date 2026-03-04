@@ -197,15 +197,19 @@ fn render_editor(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     });
 
     let gutter_dim = Style::default().fg(Color::Rgb(108, 112, 134));
-    let gutter_current = Style::default().fg(Color::Rgb(205, 214, 244));
+    let gutter_current = Style::default()
+        .fg(Color::Rgb(205, 214, 244))
+        .bg(theme.cursorline_editor.bg.unwrap_or(Color::Reset));
 
     let mut gutter_lines: Vec<Line> = Vec::with_capacity(visible_lines);
     let mut text_lines: Vec<Line> = Vec::with_capacity(visible_lines);
 
     for i in start..end {
+        let is_cursor_line = i == buf.cursor_y;
+
         // Gutter: line number
         let num_str = format!("{:>width$} ", i + 1, width = digit_count.max(2));
-        let num_style = if i == buf.cursor_y {
+        let num_style = if is_cursor_line {
             gutter_current
         } else {
             gutter_dim
@@ -213,6 +217,11 @@ fn render_editor(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
         gutter_lines.push(Line::from(Span::styled(num_str, num_style)));
 
         let line_content = &buf.lines[i];
+        let base_style = if is_cursor_line {
+            theme.text.bg(theme.cursorline_editor.bg.unwrap_or(Color::Reset))
+        } else {
+            theme.text
+        };
 
         if let Some(((sy, sx), (ey, ex), kind)) = sel_bounds {
             if kind == SelectionKind::Line {
@@ -220,7 +229,7 @@ fn render_editor(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
                     text_lines.push(Line::from(Span::styled(line_content.clone(), sel_style)));
                 } else {
                     text_lines
-                        .push(Line::from(Span::styled(line_content.clone(), theme.text)));
+                        .push(Line::from(Span::styled(line_content.clone(), base_style)));
                 }
             } else {
                 let chars: Vec<char> = line_content.chars().collect();
@@ -228,14 +237,14 @@ fn render_editor(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
 
                 if i < sy || i > ey {
                     text_lines
-                        .push(Line::from(Span::styled(line_content.clone(), theme.text)));
+                        .push(Line::from(Span::styled(line_content.clone(), base_style)));
                 } else if sy == ey && i == sy {
                     let sel_start = sx.min(len);
                     let sel_end = ex.min(len);
                     let mut spans = Vec::new();
                     if sel_start > 0 {
                         let before: String = chars[..sel_start].iter().collect();
-                        spans.push(Span::styled(before, theme.text));
+                        spans.push(Span::styled(before, base_style));
                     }
                     if sel_end > sel_start {
                         let mid: String = chars[sel_start..sel_end].iter().collect();
@@ -243,10 +252,10 @@ fn render_editor(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
                     }
                     if sel_end < len {
                         let after: String = chars[sel_end..].iter().collect();
-                        spans.push(Span::styled(after, theme.text));
+                        spans.push(Span::styled(after, base_style));
                     }
                     if spans.is_empty() {
-                        spans.push(Span::styled(line_content.clone(), theme.text));
+                        spans.push(Span::styled(line_content.clone(), base_style));
                     }
                     text_lines.push(Line::from(spans));
                 } else if i == sy {
@@ -254,7 +263,7 @@ fn render_editor(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
                     let mut spans = Vec::new();
                     if sel_start > 0 {
                         let before: String = chars[..sel_start].iter().collect();
-                        spans.push(Span::styled(before, theme.text));
+                        spans.push(Span::styled(before, base_style));
                     }
                     let rest: String = chars[sel_start..].iter().collect();
                     spans.push(Span::styled(rest, sel_style));
@@ -266,7 +275,7 @@ fn render_editor(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
                     spans.push(Span::styled(selected, sel_style));
                     if sel_end < len {
                         let after: String = chars[sel_end..].iter().collect();
-                        spans.push(Span::styled(after, theme.text));
+                        spans.push(Span::styled(after, base_style));
                     }
                     text_lines.push(Line::from(spans));
                 } else {
@@ -275,7 +284,7 @@ fn render_editor(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
                 }
             }
         } else {
-            text_lines.push(Line::from(Span::styled(line_content.clone(), theme.text)));
+            text_lines.push(Line::from(Span::styled(line_content.clone(), base_style)));
         }
     }
 
@@ -291,6 +300,24 @@ fn render_editor(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
 
     let paragraph = Paragraph::new(text_lines);
     frame.render_widget(paragraph, editor_area);
+
+    // Paint cursorline background across the full width (cells beyond text content)
+    if buf.cursor_y >= start && buf.cursor_y < end {
+        let screen_y = editor_area.y + (buf.cursor_y - start) as u16;
+        let cl_bg = theme.cursorline_editor.bg.unwrap_or(Color::Reset);
+        let frame_buf = frame.buffer_mut();
+        for x in editor_area.x..editor_area.x + editor_area.width {
+            if let Some(cell) = frame_buf.cell_mut(Position::new(x, screen_y)) {
+                cell.set_style(cell.style().bg(cl_bg));
+            }
+        }
+        // Also paint gutter cells for the cursor line
+        for x in gutter_area.x..gutter_area.x + gutter_area.width {
+            if let Some(cell) = frame_buf.cell_mut(Position::new(x, screen_y)) {
+                cell.set_style(cell.style().bg(cl_bg));
+            }
+        }
+    }
 
     // EasyMotion overlay
     if let Some(ref em) = app.easy_motion {
@@ -425,6 +452,18 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
 
     let paragraph = Paragraph::new(text_lines);
     frame.render_widget(paragraph, inner);
+
+    // Paint cursorline background across the full results width
+    if buf.cursor_y >= start && buf.cursor_y < end {
+        let screen_y = inner.y + (buf.cursor_y - start) as u16;
+        let cl_bg = theme.cursorline_results.bg.unwrap_or(Color::Reset);
+        let frame_buf = frame.buffer_mut();
+        for x in inner.x..inner.x + inner.width {
+            if let Some(cell) = frame_buf.cell_mut(Position::new(x, screen_y)) {
+                cell.set_style(cell.style().bg(cl_bg));
+            }
+        }
+    }
 }
 
 fn render_status_bar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {

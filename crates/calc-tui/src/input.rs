@@ -413,6 +413,23 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) -> bool {
 fn handle_pending_key(app: &mut App, pending: &str, key: KeyEvent) -> bool {
     let ch = match key.code {
         KeyCode::Char(c) => c,
+        KeyCode::Enter if pending.starts_with("g#") => {
+            // Execute the goto-line jump on Enter
+            let digits = &pending[2..];
+            if let Ok(line_num) = digits.parse::<usize>() {
+                let target = line_num.saturating_sub(1);
+                let max = app.buffers[app.active_tab].lines.len().saturating_sub(1);
+                app.buffers[app.active_tab].cursor_y = target.min(max);
+                app.clamp_cursor();
+                app.clear_desired_x();
+            }
+            app.message = None;
+            return false;
+        }
+        KeyCode::Esc if pending.starts_with("g#") => {
+            app.message = None;
+            return false;
+        }
         _ => return false,
     };
 
@@ -444,6 +461,14 @@ fn handle_pending_key(app: &mut App, pending: &str, key: KeyEvent) -> bool {
         ("g", 'g') => {
             app.buffers[app.active_tab].cursor_y = 0;
             app.clamp_cursor();
+            false
+        }
+        ("g", '0'..='9') => {
+            // Start accumulating line number: g5, g12, etc.
+            let mut num = String::from("g#");
+            num.push(ch);
+            app.pending_key = Some(num);
+            app.message = Some(format!("g{}", ch));
             false
         }
         ("g", 't') => {
@@ -546,6 +571,28 @@ fn handle_pending_key(app: &mut App, pending: &str, key: KeyEvent) -> bool {
             app.mode = Mode::Insert;
             app.message = None;
             true
+        }
+        _ if pending.starts_with("g#") => {
+            // g + line number accumulation
+            let digits = &pending[2..]; // extract digits after "g#"
+            if ch.is_ascii_digit() {
+                let mut num = pending.to_string();
+                num.push(ch);
+                app.pending_key = Some(num);
+                app.message = Some(format!("g{}{}", digits, ch));
+                false
+            } else {
+                // Jump to line (1-based → 0-based)
+                if let Ok(line_num) = digits.parse::<usize>() {
+                    let target = line_num.saturating_sub(1);
+                    let max = app.buffers[app.active_tab].lines.len().saturating_sub(1);
+                    app.buffers[app.active_tab].cursor_y = target.min(max);
+                    app.clamp_cursor();
+                    app.clear_desired_x();
+                }
+                app.message = None;
+                false
+            }
         }
         _ => false,
     }
