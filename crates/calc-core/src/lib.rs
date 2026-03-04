@@ -222,34 +222,36 @@ mod integration_tests {
 
     #[test]
     fn test_tuple_assignment() {
-        let r = evaluate("(dollar, euro, yen) = (1, 1.18, 0.0067)\n100 euro in dollar");
+        // euro=1 (base), dollar=0.83 → 100 euro to dollar = 100 * 0.83 = 83
+        let r = evaluate("(euro, dollar, yen) = (1, 0.83, 182.87)\n100 euro in dollar");
         assert!(r[0].error.is_none(), "Error: {:?}", r[0].error);
         assert!(r[1].error.is_none(), "Error: {:?}", r[1].error);
         let v = r[1].value.as_ref().unwrap().number;
-        assert!((v - 118.0).abs() < 1e-6);
+        assert!((v - 83.0).abs() < 1e-6);
     }
 
     #[test]
     fn test_tuple_cross_conversion() {
-        let r = evaluate("(dollar, euro, yen) = (1, 1.18, 0.0067)\n100 euro in yen");
+        // euro=1 (base), dollar=0.83, yen=182.87
+        // 100 dollar in yen = 100 * (182.87 / 0.83) ≈ 22032.53
+        let r = evaluate("(euro, dollar, yen) = (1, 0.83, 182.87)\n100 dollar in yen");
         assert!(r[1].error.is_none(), "Error: {:?}", r[1].error);
         let v = r[1].value.as_ref().unwrap().number;
-        // 100 * (1.18 / 0.0067) ≈ 17611.94
-        assert!((v - 100.0 * (1.18 / 0.0067)).abs() < 1e-2);
+        assert!((v - 100.0 * (182.87 / 0.83)).abs() < 1e-2);
     }
 
     #[test]
     fn test_custom_unit_conversion() {
-        // test = 100, some_other = 45 → 1 test in some_other = 100/45 ≈ 2.2222
-        let r = evaluate("test = 100\nsome_other = 45\n1 test in some_other");
+        // (euro, dollar) = (1, 0.83) → 1 euro to dollar = 0.83
+        let r = evaluate("euro = 1\ndollar = 0.83\n1 euro in dollar");
         assert!(r[2].error.is_none(), "Error: {:?}", r[2].error);
         let v = r[2].value.as_ref().unwrap().number;
-        assert!((v - 100.0 / 45.0).abs() < 1e-10);
+        assert!((v - 0.83).abs() < 1e-10);
 
-        // Reverse: 1 some_other in test = 45/100 = 0.45
-        let r = evaluate("test = 100\nsome_other = 45\n1 some_other in test");
+        // Reverse: 1 dollar to euro = 1/0.83 ≈ 1.2048
+        let r = evaluate("euro = 1\ndollar = 0.83\n1 dollar in euro");
         assert!(r[2].error.is_none(), "Error: {:?}", r[2].error);
         let v = r[2].value.as_ref().unwrap().number;
-        assert!((v - 0.45).abs() < 1e-10);
+        assert!((v - 1.0 / 0.83).abs() < 1e-6);
     }
 }

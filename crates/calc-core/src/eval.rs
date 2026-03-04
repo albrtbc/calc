@@ -320,7 +320,9 @@ fn eval_binary_op(
 /// already being in the target unit's category base unit, or just attach the unit.
 fn convert_value(v: Value, target_unit: &Unit, env: &Environment) -> Result<Value> {
     // Handle custom (variable-based) unit conversions:
-    // e.g. test = 100, some_other = 45 → "1 test in some_other" = 1 * (100/45)
+    // (euro, dollar, yen) = (1, 0.83, 182.87)
+    // "1 euro to dollar" → 1 * (0.83 / 1) = 0.83
+    // Formula: amount * (target_rate / source_rate)
     match (&v.unit, target_unit) {
         (Some(Unit::Custom(src_name)), Unit::Custom(tgt_name)) => {
             let src_val = env.get(src_name).ok_or_else(|| {
@@ -329,10 +331,10 @@ fn convert_value(v: Value, target_unit: &Unit, env: &Environment) -> Result<Valu
             let tgt_val = env.get(tgt_name).ok_or_else(|| {
                 CalcError::eval(format!("Undefined variable: '{}'", tgt_name))
             })?;
-            if tgt_val.number == 0.0 {
+            if src_val.number == 0.0 {
                 return Err(CalcError::eval("Division by zero in conversion"));
             }
-            let result = v.number * (src_val.number / tgt_val.number);
+            let result = v.number * (tgt_val.number / src_val.number);
             Ok(Value::with_unit(result, target_unit.clone()))
         }
         (Some(src_unit), _) => {
