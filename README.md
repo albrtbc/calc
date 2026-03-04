@@ -154,7 +154,7 @@ Vertical movement (`j`/`k`) preserves your horizontal cursor position across sho
 
 | Key | Action |
 |-----|--------|
-| `x` | Delete character under cursor |
+| `x` / `Delete` | Delete character under cursor |
 | `dd` | Delete current line |
 | `diw` | Delete inner word |
 | `cc` | Change (replace) current line |
@@ -185,7 +185,7 @@ Vertical movement (`j`/`k`) preserves your horizontal cursor position across sho
 | `j` / `k` | Extend selection down / up |
 | `h` / `l` | Move cursor left / right |
 | `G` | Extend selection to last line |
-| `d` | Delete selected text |
+| `d` / `Delete` | Delete selected text |
 | `y` | Yank selected text |
 | `Esc` | Cancel selection |
 
@@ -261,6 +261,13 @@ y = x * 2       # 84
 total = x + y    # 126
 ```
 
+**Tuple assignment** — multiple variables in one line:
+
+```
+(a, b, c) = (10, 20, 30)
+a + b + c        # 60
+```
+
 ### Previous Results
 
 ```
@@ -323,6 +330,17 @@ Use `in`, `to`, or `as` to convert between units:
 | Temperature | C, F, K |
 | Data | B, KB, MB, GB, TB |
 | Time | s, min, h, d |
+
+**Custom unit conversions** — define variables as rates and convert between them:
+
+```
+(euro, dollar, yen) = (1, 0.83, 182.87)
+100 euro in dollar       # 83
+50 dollar to yen         # 11017.77
+1 euro to yen            # 182.87
+```
+
+The first value is the base (1). Other values are rates relative to the base: "1 euro = 0.83 dollars = 182.87 yen". Variables defined individually also work as custom units.
 
 ### Built-in Functions
 

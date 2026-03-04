@@ -370,7 +370,7 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) -> bool {
         }
 
         // -- Editing --
-        KeyCode::Char('x') => {
+        KeyCode::Delete | KeyCode::Char('x') => {
             let cy = app.buffers[i].cursor_y;
             let line_len = app.buffers[i].lines[cy].chars().count();
             let cx = app.buffers[i].cursor_x;
@@ -778,7 +778,7 @@ pub fn handle_visual_key(app: &mut App, key: KeyEvent) -> bool {
             }
             false
         }
-        KeyCode::Char('d') => {
+        KeyCode::Delete | KeyCode::Char('d') => {
             if let Some(sel) = app.buffers[i].selection.take() {
                 if sel.kind == SelectionKind::Line {
                     let ((sy, _), (ey, _)) = app.ordered_selection(&sel);
