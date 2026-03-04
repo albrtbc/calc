@@ -437,6 +437,10 @@ fn handle_pending_key(app: &mut App, pending: &str, key: KeyEvent) -> bool {
             app.message = Some("1 line yanked".to_string());
             false
         }
+        ("y", 'r') => {
+            app.copy_result();
+            false
+        }
         ("g", 'g') => {
             app.buffers[app.active_tab].cursor_y = 0;
             app.clamp_cursor();

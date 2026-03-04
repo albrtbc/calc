@@ -331,6 +331,10 @@ impl App {
                     self.evaluate();
                     return;
                 }
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    self.copy_result();
+                    return;
+                }
                 KeyCode::Char('d') | KeyCode::Char('D') => {
                     self.save_undo_snapshot();
                     if self.buffers[i].selection.is_some() {
@@ -1031,6 +1035,28 @@ impl App {
     }
 
     // ── Clipboard / selection ────────────────────────────────────────────
+
+    pub fn copy_result(&mut self) {
+        let i = self.active_tab;
+        let cy = self.buffers[i].cursor_y;
+        if let Some(result) = self.buffers[i].results.get(cy) {
+            let text = if let Some(ref err) = result.error {
+                err.clone()
+            } else if !result.display.is_empty() {
+                result.display.clone()
+            } else {
+                String::new()
+            };
+            if !text.is_empty() {
+                clipboard::copy(&text);
+                self.message = Some(format!("Copied: {}", text));
+            } else {
+                self.message = Some("No result to copy".to_string());
+            }
+        } else {
+            self.message = Some("No result to copy".to_string());
+        }
+    }
 
     pub fn copy_selection_or_line(&mut self) {
         let i = self.active_tab;
