@@ -4,3 +4,6 @@ members = [
     "crates/calc-core",
     "crates/calc-tui",
 ]
+
+[workspace.package]
+version = "0.1.0"

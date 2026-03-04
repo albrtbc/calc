@@ -1,6 +1,6 @@
 [package]
 name = "calc-tui"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "TUI frontend for Calc"
 
