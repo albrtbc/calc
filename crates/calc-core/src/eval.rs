@@ -169,6 +169,16 @@ fn eval_expr(expr: &Expr, env: &mut Environment) -> Result<Value> {
             Ok(v)
         }
 
+        Expr::TupleAssign { names, values } => {
+            let mut last = Value::new(0.0);
+            for (name, val_expr) in names.iter().zip(values.iter()) {
+                let v = eval_expr(val_expr, env)?;
+                env.set(name, v.clone());
+                last = v;
+            }
+            Ok(last)
+        }
+
         Expr::UnaryNeg(inner) => {
             let mut v = eval_expr(inner, env)?;
             v.number = -v.number;

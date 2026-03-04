@@ -9,6 +9,7 @@ pub enum Expr {
     UnaryPos(Box<Expr>),
     FuncCall { name: String, args: Vec<Expr> },
     Assign { name: String, value: Box<Expr> },
+    TupleAssign { names: Vec<String>, values: Vec<Expr> },
     Convert { expr: Box<Expr>, target_unit: Unit },
     /// "N%" = N/100
     Percentage(Box<Expr>),

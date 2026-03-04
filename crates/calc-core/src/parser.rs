@@ -140,6 +140,13 @@ impl LineParser {
 
     /// Top-level: assignment or additive
     fn parse_expr(&mut self) -> Result<Expr> {
+        // Tuple assignment: (a, b, c) = (1, 2, 3)
+        if self.peek().kind == TokenKind::LParen {
+            if let Some(tuple) = self.try_parse_tuple_assign()? {
+                return Ok(tuple);
+            }
+        }
+
         // Assignment: IDENT = expr
         if let TokenKind::Ident(_) = &self.peek().kind.clone() {
             if let Some(next) = self.peek_offset(1) {
@@ -155,6 +162,88 @@ impl LineParser {
             }
         }
         self.parse_additive()
+    }
+
+    /// Try to parse `(name1, name2, ...) = (expr1, expr2, ...)`.
+    /// Returns None if the pattern doesn't match (position is restored).
+    fn try_parse_tuple_assign(&mut self) -> Result<Option<Expr>> {
+        let save_pos = self.pos;
+
+        // Check pattern: ( ident , ident , ... ) =
+        self.advance(); // consume '('
+        let mut names = Vec::new();
+
+        loop {
+            match &self.peek().kind {
+                TokenKind::Ident(s) => {
+                    names.push(s.clone());
+                    self.advance();
+                }
+                _ => {
+                    self.pos = save_pos;
+                    return Ok(None);
+                }
+            }
+            match &self.peek().kind {
+                TokenKind::Comma => { self.advance(); }
+                TokenKind::RParen => { self.advance(); break; }
+                _ => {
+                    self.pos = save_pos;
+                    return Ok(None);
+                }
+            }
+        }
+
+        // Must be followed by '='
+        if self.peek().kind != TokenKind::Eq {
+            self.pos = save_pos;
+            return Ok(None);
+        }
+        self.advance(); // consume '='
+
+        // Parse ( expr, expr, ... )
+        if self.peek().kind != TokenKind::LParen {
+            let tok = self.peek().clone();
+            return Err(CalcError::new(
+                "Expected '(' after '=' in tuple assignment",
+                tok.line,
+                tok.col,
+            ));
+        }
+        self.advance(); // consume '('
+
+        let mut values = Vec::new();
+        loop {
+            let expr = self.parse_additive()?;
+            values.push(expr);
+            match &self.peek().kind {
+                TokenKind::Comma => { self.advance(); }
+                TokenKind::RParen => { self.advance(); break; }
+                other => {
+                    let tok = self.peek().clone();
+                    return Err(CalcError::new(
+                        format!("Expected ',' or ')' in tuple values, got {:?}", other),
+                        tok.line,
+                        tok.col,
+                    ));
+                }
+            }
+        }
+
+        if names.len() != values.len() {
+            let tok = self.peek().clone();
+            return Err(CalcError::new(
+                format!(
+                    "Tuple size mismatch: {} names but {} values",
+                    names.len(),
+                    values.len()
+                ),
+                tok.line,
+                tok.col,
+            ));
+        }
+
+        Ok(Some(Expr::TupleAssign { names, values }))
     }
 
     fn parse_additive(&mut self) -> Result<Expr> {

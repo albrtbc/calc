@@ -221,6 +221,24 @@ mod integration_tests {
     }
 
     #[test]
+    fn test_tuple_assignment() {
+        let r = evaluate("(dollar, euro, yen) = (1, 1.18, 0.0067)\n100 euro in dollar");
+        assert!(r[0].error.is_none(), "Error: {:?}", r[0].error);
+        assert!(r[1].error.is_none(), "Error: {:?}", r[1].error);
+        let v = r[1].value.as_ref().unwrap().number;
+        assert!((v - 118.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_tuple_cross_conversion() {
+        let r = evaluate("(dollar, euro, yen) = (1, 1.18, 0.0067)\n100 euro in yen");
+        assert!(r[1].error.is_none(), "Error: {:?}", r[1].error);
+        let v = r[1].value.as_ref().unwrap().number;
+        // 100 * (1.18 / 0.0067) ≈ 17611.94
+        assert!((v - 100.0 * (1.18 / 0.0067)).abs() < 1e-2);
+    }
+
+    #[test]
     fn test_custom_unit_conversion() {
         // test = 100, some_other = 45 → 1 test in some_other = 100/45 ≈ 2.2222
         let r = evaluate("test = 100\nsome_other = 45\n1 test in some_other");
