@@ -1,6 +1,6 @@
 [package]
 name = "calc-core"
-version.workspace = true
+version = "0.1.0"
 edition = "2021"
 description = "Pure Rust math engine for Calc"
 
