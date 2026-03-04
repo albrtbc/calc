@@ -28,6 +28,10 @@ fn main() -> io::Result<()> {
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
+            "--version" | "-V" => {
+                println!("calc {}", env!("CARGO_PKG_VERSION"));
+                std::process::exit(0);
+            }
             "--vim" => edit_style = EditStyle::Vim,
             "--simple" => edit_style = EditStyle::Simple,
             "eval" => {
