@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/albrtbc/calc/compare/v0.2.1...v0.2.2) (2026-03-04)
+
+
+### Bug Fixes
+
+* use absolute path in install.sh version check ([be8840e](https://github.com/albrtbc/calc/commit/be8840e792ce56f82c06478ca297fd9a6c186dc5))
+
 ## [0.2.1](https://github.com/albrtbc/calc/compare/v0.2.0...v0.2.1) (2026-03-04)
 
 
