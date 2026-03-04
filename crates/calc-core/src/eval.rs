@@ -141,6 +141,27 @@ fn evaluate_line(line: &Line, env: &mut Environment, _line_index: usize) -> Line
         Line::Empty | Line::Label(_) => LineResult::empty(),
         Line::Comment(_) => LineResult::empty(),
         Line::Error(msg) => LineResult::err(msg.clone()),
+        Line::Expr(Expr::TupleAssign { names, values }) => {
+            let mut pairs = Vec::new();
+            let mut last = Value::new(0.0);
+            for (name, val_expr) in names.iter().zip(values.iter()) {
+                match eval_expr(val_expr, env) {
+                    Ok(v) => {
+                        env.set(name, v.clone());
+                        pairs.push(format!("{}={}", name, v));
+                        last = v;
+                    }
+                    Err(e) => return LineResult::err(e.to_string()),
+                }
+            }
+            let display = pairs.join(", ");
+            LineResult {
+                value: Some(last),
+                display,
+                error: None,
+                is_assignment: true,
+            }
+        }
         Line::Expr(expr) => {
             let is_assignment = matches!(expr, Expr::Assign { .. });
             match eval_expr(expr, env) {
