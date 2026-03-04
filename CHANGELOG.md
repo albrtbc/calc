@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/albrtbc/calc/compare/v0.2.0...v0.2.1) (2026-03-04)
+
+
+### Bug Fixes
+
+* add --version/-V flag to CLI ([091698f](https://github.com/albrtbc/calc/commit/091698fba87ddb4f804ce054650d4bb46cd75bab))
+
 ## [0.2.0](https://github.com/albrtbc/calc/compare/v0.1.0...v0.2.0) (2026-03-04)
 
 
